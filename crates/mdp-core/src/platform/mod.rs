@@ -4,11 +4,6 @@
 //! filters out events the app injected so injected input never loops back.
 //! [`FakePlatform`](fake::FakePlatform) is the test double used on any host.
 
-#[cfg(target_os = "macos")]
-pub mod macos;
-#[cfg(target_os = "windows")]
-pub mod windows;
-
 pub mod fake;
 
 pub use fake::FakePlatform;
@@ -109,7 +104,8 @@ impl std::fmt::Display for PlatformError {
 
 impl std::error::Error for PlatformError {}
 
-/// OS touchpoints for one Peer, implemented per OS behind `cfg(target_os)`.
+/// OS touchpoints for one Peer. OS impls live in the `mdp` crate behind
+/// `cfg(target_os)` so `mdp-core` stays platform-free.
 ///
 /// Capturing sides only ever see physical (non-injected) input: injected
 /// events are filtered before they reach the capture channel (Windows

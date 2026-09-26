@@ -1,5 +1,7 @@
 //! `mdp`: one binary for both Peers (Source and Sink are roles, not builds).
 
+mod platform;
+
 use mdp_core::{Desktop, FakePlatform, InputEvent, Platform};
 use std::process::ExitCode;
 

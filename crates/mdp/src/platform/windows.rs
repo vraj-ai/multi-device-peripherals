@@ -1,11 +1,11 @@
-//! Windows implementation of [`Platform`](super::Platform) (T1 stub).
+//! Windows implementation of [`Platform`](mdp_core::Platform) (T1 stub).
 //!
 //! The full implementation will capture with low-level hooks
 //! (`WH_KEYBOARD_LL` / `WH_MOUSE_LL`), ignoring events flagged
 //! `LLMHF_INJECTED` / `LLKHF_INJECTED`, and inject with `SendInput`.
-//! Every method currently reports [`PlatformError::Unsupported`](super::PlatformError::Unsupported).
+//! Every method currently reports [`PlatformError::Unsupported`](mdp_core::PlatformError::Unsupported).
 
-use super::{Desktop, InputEvent, PermissionStatus, Platform, PlatformError};
+use mdp_core::{Desktop, InputEvent, PermissionStatus, Platform, PlatformError};
 use std::sync::mpsc::Receiver;
 
 /// Windows Peer platform.

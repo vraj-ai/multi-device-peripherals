@@ -1,12 +1,12 @@
-//! macOS implementation of [`Platform`](super::Platform) (T1 stub).
+//! macOS implementation of [`Platform`](mdp_core::Platform) (T1 stub).
 //!
 //! The full implementation will capture with `CGEventTap`, ignoring events
 //! carrying our injected event-source user-data tag, and inject with
 //! `CGEventPost`. Accessibility + Input Monitoring permission is reported
-//! via [`Platform::check_permissions`](super::Platform::check_permissions).
-//! Every method currently reports [`PlatformError::Unsupported`](super::PlatformError::Unsupported).
+//! via [`Platform::check_permissions`](mdp_core::Platform::check_permissions).
+//! Every method currently reports [`PlatformError::Unsupported`](mdp_core::PlatformError::Unsupported).
 
-use super::{Desktop, InputEvent, PermissionStatus, Platform, PlatformError};
+use mdp_core::{Desktop, InputEvent, PermissionStatus, Platform, PlatformError};
 use std::sync::mpsc::Receiver;
 
 /// macOS Peer platform.
