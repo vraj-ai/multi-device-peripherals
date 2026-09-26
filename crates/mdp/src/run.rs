@@ -244,7 +244,14 @@ async fn round(
     let capture = platform
         .start_capture()
         .map_err(|err| format!("capture: {err}"))?;
-    let mut peer = Peer::new(platform, link, capture, engine, *desktop);
+    let mut peer = Peer::new(
+        platform,
+        link,
+        capture,
+        engine,
+        *desktop,
+        config.share_clipboard,
+    );
     println!("mdp run: link up; driving");
     Err(format!("link lost: {}", peer.drive().await))
 }
