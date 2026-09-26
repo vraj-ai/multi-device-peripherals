@@ -6,6 +6,7 @@
 //! [`platform::Platform`]; the `windows` and `macos` implementations live in
 //! the `mdp` crate, selected by `cfg(target_os)`.
 
+pub mod crossing;
 pub mod platform;
 
 pub use platform::{
