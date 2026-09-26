@@ -1,0 +1,11 @@
+[package]
+name = "mdp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mdp"
+path = "src/main.rs"
+
+[dependencies]
+mdp-core = { path = "../mdp-core" }
