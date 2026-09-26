@@ -6,3 +6,10 @@ edition = "2021"
 [lib]
 name = "mdp_core"
 path = "src/lib.rs"
+
+[dependencies]
+postcard = { version = "1", features = ["alloc"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+snow = "0.9"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }

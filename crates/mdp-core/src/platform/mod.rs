@@ -7,6 +7,7 @@
 pub mod fake;
 
 pub use fake::FakePlatform;
+use serde::{Deserialize, Serialize};
 
 /// Maximum clipboard payload in bytes (UTF-8 text only, capped at 1 MiB).
 pub const CLIPBOARD_MAX_BYTES: usize = 1024 * 1024;
@@ -15,7 +16,7 @@ pub const CLIPBOARD_MAX_BYTES: usize = 1024 * 1024;
 ///
 /// A [`Desktop`] may span several screens. The cursor leaves the Source's
 /// Desktop through the shared edge at each Crossing.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Desktop {
     pub x: f64,
     pub y: f64,
@@ -47,7 +48,7 @@ impl Default for Desktop {
 }
 
 /// Which mouse button an event refers to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MouseButton {
     Left,
     Right,
