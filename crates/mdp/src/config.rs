@@ -226,6 +226,12 @@ impl Config {
         tmp.push(".tmp");
         let tmp = PathBuf::from(tmp);
         std::fs::write(&tmp, text)?;
+        // The file holds this Peer's private static key: owner-only on Unix.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+        }
         std::fs::rename(&tmp, path)?;
         Ok(())
     }
@@ -265,6 +271,22 @@ mod tests {
         if let Some(parent) = path.parent() {
             let _ = std::fs::remove_dir(parent);
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn config_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_path("owner-only");
+        Config::generate()
+            .expect("generate")
+            .save(&path)
+            .expect("save");
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 
     #[test]
