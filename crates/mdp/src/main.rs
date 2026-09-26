@@ -1,5 +1,7 @@
 //! `mdp`: one binary for both Peers (Source and Sink are roles, not builds).
 
+mod config;
+mod discovery;
 mod platform;
 
 use mdp_core::{Desktop, FakePlatform, InputEvent, Platform};
