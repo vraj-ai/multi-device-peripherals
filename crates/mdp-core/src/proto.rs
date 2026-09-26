@@ -19,10 +19,26 @@ pub const FRAME_HEADER_LEN: usize = 4;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 /// Which side of this Peer's Desktop the other Peer's Desktop sits on.
+/// Appended variants keep the existing postcard indices stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArrangementSide {
     Left,
     Right,
+    Top,
+    Bottom,
+}
+
+impl ArrangementSide {
+    /// The opposite side, as the other Peer sees it (same semantics as
+    /// `ui::arrange::mirror`: side flips, offset negates).
+    pub fn mirror(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+            Self::Top => Self::Bottom,
+            Self::Bottom => Self::Top,
+        }
+    }
 }
 
 /// One message on the Link, per the v1 spec: input and clipboard from the
@@ -149,6 +165,14 @@ mod tests {
                 side: ArrangementSide::Left,
                 offset: -40.5,
             },
+            Frame::Arrangement {
+                side: ArrangementSide::Top,
+                offset: 0.0,
+            },
+            Frame::Arrangement {
+                side: ArrangementSide::Bottom,
+                offset: 33.25,
+            },
             Frame::Enter { edge_pos: 0.25 },
             Frame::Leave { edge_pos: 0.75 },
             Frame::MouseMove { dx: 3.0, dy: -2.0 },
@@ -177,6 +201,14 @@ mod tests {
             let body = encode_frame(&frame).expect("encode frame");
             assert_eq!(decode_frame(&body).expect("decode frame"), frame);
         }
+    }
+
+    #[test]
+    fn arrangement_side_mirrors_all_four_sides() {
+        assert_eq!(ArrangementSide::Left.mirror(), ArrangementSide::Right);
+        assert_eq!(ArrangementSide::Right.mirror(), ArrangementSide::Left);
+        assert_eq!(ArrangementSide::Top.mirror(), ArrangementSide::Bottom);
+        assert_eq!(ArrangementSide::Bottom.mirror(), ArrangementSide::Top);
     }
 
     #[test]

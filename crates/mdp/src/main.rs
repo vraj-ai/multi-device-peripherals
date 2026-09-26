@@ -3,6 +3,7 @@
 mod config;
 mod discovery;
 mod platform;
+mod run;
 mod selftest;
 mod ui;
 
@@ -92,7 +93,8 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
-        Some(command @ ("run" | "pair")) => run_stub(command),
+        Some("run") => run::run(),
+        Some("pair") => run_stub("pair"),
         Some("selftest") => selftest_platform(),
         Some(flag) if flag.starts_with('-') => {
             eprintln!("error: unexpected flag '{flag}'\n");

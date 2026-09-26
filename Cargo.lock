@@ -2485,6 +2485,7 @@ dependencies = [
  "mdns-sd",
  "mdp-core",
  "serde",
+ "tokio",
  "toml 1.1.6+spec-1.1.0",
  "tray-icon",
  "windows 0.61.3",

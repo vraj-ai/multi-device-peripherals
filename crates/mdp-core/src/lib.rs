@@ -9,6 +9,7 @@
 pub mod crossing;
 pub mod keymap;
 pub mod link;
+pub mod peer;
 pub mod platform;
 pub mod proto;
 
