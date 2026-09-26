@@ -63,10 +63,15 @@ impl App {
         }
         let status = self.view.status;
         let state = tray::tray_state(status.linked, status.focus_here);
+        let latency = status
+            .latency_ms
+            .map(|ms| format!(" · {ms} ms"))
+            .unwrap_or_default();
         let text = if status.linked {
             format!(
-                "Linked to {} · focus: {}",
+                "Linked to {}{} · focus: {}",
                 self.view.peer_name,
+                latency,
                 if status.focus_here { "here" } else { "peer" }
             )
         } else {
