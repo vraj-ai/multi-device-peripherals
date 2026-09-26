@@ -272,6 +272,9 @@ impl<P: Platform> Peer<P> {
         local: Desktop,
         share_clipboard: bool,
     ) -> Self {
+        // Seed the echo guard with what is already copied: only changes made
+        // during the session sync, so connecting never clobbers either side.
+        let last_clipboard = platform.clipboard_get().ok();
         let (tx, inbox) = unbounded_channel();
         let done = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&done);
@@ -285,7 +288,7 @@ impl<P: Platform> Peer<P> {
             cursor: (local.x + local.width / 2.0, local.y + local.height / 2.0),
             last_rtt: None,
             share_clipboard,
-            last_clipboard: None,
+            last_clipboard,
             last_poll: Instant::now(),
         }
     }

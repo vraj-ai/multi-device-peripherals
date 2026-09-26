@@ -273,6 +273,30 @@ async fn clipboard_text_syncs_without_echo() {
 }
 
 #[tokio::test]
+async fn connecting_does_not_push_what_was_already_copied() {
+    let copied = |desktop| {
+        let mut platform = FakePlatform::new(desktop);
+        platform.clipboard_set("copied before connect").unwrap();
+        platform
+    };
+    let (mut a, mut b) = pair_with(
+        Arrangement::new(Side::Right),
+        Arrangement::new(Side::Left),
+        true,
+        copied,
+        FakePlatform::new,
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(b.platform().clipboard_get().unwrap(), "");
+    a.platform_mut().clipboard_set("copied after").unwrap();
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(b.platform().clipboard_get().unwrap(), "copied after");
+}
+
+#[tokio::test]
 async fn clipboard_toggle_off_sends_nothing() {
     let (mut a, mut b) = pair_with(
         Arrangement::new(Side::Right),
