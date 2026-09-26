@@ -7,6 +7,7 @@
 //! the `mdp` crate, selected by `cfg(target_os)`.
 
 pub mod crossing;
+pub mod keymap;
 pub mod link;
 pub mod platform;
 pub mod proto;
