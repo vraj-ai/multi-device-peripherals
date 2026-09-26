@@ -3,7 +3,7 @@
 
 use super::theme;
 use eframe::egui::{self, Align, Frame, Layout, Margin, RichText, Stroke, Ui};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, SyncSender};
 use std::time::{Duration, Instant};
 
 /// How long a Pairing code stays valid before it counts as rejected.
@@ -28,26 +28,34 @@ impl PairingRequest {
 /// A `confirm` callback for `Link::connect`/`accept` plus the receiver the UI
 /// polls. The callback blocks its caller until the UI answers or [`EXPIRY`]
 /// passes (expiry rejects).
-// ponytail: blocks one tokio worker for up to EXPIRY; wrap the handshake in
-// `spawn_blocking` if the runtime ever runs single-threaded.
-#[allow(dead_code)] // ponytail: T8 (#9) passes this to Link::connect/accept and App.pair_requests.
+#[cfg(test)]
 pub fn bridge(
     peer_name: String,
 ) -> (
     impl Fn(&str) -> bool + Send + Sync + 'static,
-    Receiver<PairingRequest>,
+    mpsc::Receiver<PairingRequest>,
 ) {
     let (tx, rx) = mpsc::channel();
-    let confirm = move |code: &str| {
+    (confirm_via(tx, peer_name), rx)
+}
+
+/// A `confirm` callback that posts each Pairing to `requests` and waits for
+/// the answer (expiry or a closed UI rejects).
+// ponytail: blocks the peer loop's thread for up to EXPIRY; fine, nothing
+// else needs that thread while a handshake is pending.
+pub fn confirm_via(
+    requests: mpsc::Sender<PairingRequest>,
+    peer_name: String,
+) -> impl Fn(&str) -> bool + Send + Sync + 'static {
+    move |code: &str| {
         let (reply, answer) = mpsc::sync_channel(1);
         let request = PairingRequest {
             peer_name: peer_name.clone(),
             code: code.to_string(),
             reply,
         };
-        tx.send(request).is_ok() && answer.recv_timeout(EXPIRY).unwrap_or(false)
-    };
-    (confirm, rx)
+        requests.send(request).is_ok() && answer.recv_timeout(EXPIRY).unwrap_or(false)
+    }
 }
 
 /// The Pairing window (`CONTEXT/ui-design.md` §Pairing).
