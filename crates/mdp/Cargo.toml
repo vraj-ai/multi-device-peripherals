@@ -14,3 +14,7 @@ hex = "0.4"
 mdns-sd = "0.15"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+eframe = "0.36"
+
+[dev-dependencies]
+egui_kittest = "0.36"
