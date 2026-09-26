@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mdp — macOS permissions</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#121416;color:#ECE8E1}
+a{color:#F0A23B}a:hover{color:#F7C274}
+</style>
+</helmet>
+<div style="width: 620px; height: 560px; box-sizing: border-box; padding: 36px 40px; display: flex; flex-direction: column; gap: 22px; background: #1B1E22; color: #ECE8E1; font-family: 'IBM Plex Sans', system-ui, sans-serif">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #A0A6AE">One-time setup · step 1 of 2 done</span>
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">mdp needs two macOS permissions</h1>
+<p style="margin: 0; font-size: 15px; line-height: 1.5; color: #C5CBD2">macOS asks for these so mdp can move the cursor and type for you, and read your mouse and keyboard when they're plugged into this Mac.</p>
+</div>
+<div style="display: flex; align-items: center; gap: 16px; padding: 16px 18px; border: 1px solid #30353C; border-radius: 8px">
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#5CC2B5" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M7 12.5l3.2 3.2L17 9"></path></svg>
+<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1">
+<span style="font-size: 15px; font-weight: 600">Accessibility</span>
+<span style="font-size: 13px; color: #A0A6AE">Move the cursor and type on this Mac</span>
+</div>
+<span style="font-size: 13px; color: #5CC2B5; font-weight: 500">Granted</span>
+</div>
+<div style="display: flex; align-items: center; gap: 16px; padding: 16px 18px; border: 1.5px solid #F0A23B; border-radius: 8px; background: #231D14">
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F0A23B" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 7v6"></path><path d="M12 16.5v.5"></path></svg>
+<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1">
+<span style="font-size: 15px; font-weight: 600">Input Monitoring</span>
+<span style="font-size: 13px; color: #C5CBD2">Read the mouse and keyboard plugged into this Mac</span>
+</div>
+<button type="button" style="min-height: 44px; padding: 0 16px; background: #F0A23B; color: #1A1206; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 600; white-space: nowrap">Open Settings</button>
+</div>
+<p style="margin: 0; font-size: 13px; line-height: 1.5; color: #A0A6AE">mdp never records keystrokes. Input goes only to your paired Windows PC, encrypted, and nothing is stored.</p>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; justify-content: flex-end; gap: 10px">
+<button type="button" style="min-height: 44px; padding: 0 20px; background: transparent; color: #ECE8E1; border: 1px solid #4A525C; border-radius: 6px; font-family: inherit; font-size: 14px">Check again</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":620,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mdp — Tray menu</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#121416;color:#ECE8E1}
+a{color:#F0A23B}a:hover{color:#F7C274}
+</style>
+</helmet>
+<div style="width: 360px; height: 620px; box-sizing: border-box; padding: 24px; display: flex; flex-direction: column; gap: 28px; background: #121416; color: #ECE8E1; font-family: 'IBM Plex Sans', system-ui, sans-serif">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #A0A6AE">Tray icon states</span>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border: 1px solid #30353C; border-radius: 6px">
+<svg width="28" height="20" viewBox="0 0 28 20" fill="none" stroke="#7C848E" stroke-width="2" stroke-dasharray="3 2" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="1.5"></rect><rect x="13" y="7" width="14" height="10" rx="1.5"></rect></svg>
+<span style="font-size: 12px; color: #A0A6AE">No peer</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border: 1px solid #30353C; border-radius: 6px">
+<svg width="28" height="20" viewBox="0 0 28 20" fill="none" stroke="#F0A23B" stroke-width="2" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="1.5" fill="#F0A23B"></rect><rect x="13" y="7" width="14" height="10" rx="1.5"></rect></svg>
+<span style="font-size: 12px; color: #A0A6AE">Focus here</span>
+</div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border: 1px solid #30353C; border-radius: 6px">
+<svg width="28" height="20" viewBox="0 0 28 20" fill="none" stroke="#F0A23B" stroke-width="2" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="1.5"></rect><rect x="13" y="7" width="14" height="10" rx="1.5" fill="#F0A23B"></rect></svg>
+<span style="font-size: 12px; color: #A0A6AE">Focus on peer</span>
+</div>
+</div>
+</div>
+<nav aria-label="mdp tray menu" style="display: flex; flex-direction: column; padding: 6px; background: #23272C; border: 1px solid #3A4048; border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.45)">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 12px">
+<span style="font-size: 14px; font-weight: 600">Linked to MacBook Pro</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A0A6AE">encrypted · 3 ms · focus: this PC</span>
+</div>
+<div style="height: 1px; background: #3A4048; margin: 2px 6px"></div>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; font-size: 14px; border-radius: 6px">
+<input type="checkbox" checked style="width: 16px; height: 16px; accent-color: #F0A23B">
+<span style="flex-grow: 1">Share mouse &amp; keyboard</span>
+</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; font-size: 14px; border-radius: 6px">
+<input type="checkbox" checked style="width: 16px; height: 16px; accent-color: #F0A23B">
+<span style="flex-grow: 1">Sync clipboard text</span>
+</label>
+<div style="height: 1px; background: #3A4048; margin: 2px 6px"></div>
+<button type="button" style="display: flex; align-items: center; min-height: 40px; padding: 0 12px 0 38px; background: #33302A; color: #ECE8E1; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; text-align: left">Arrange displays…</button>
+<button type="button" style="display: flex; align-items: center; min-height: 40px; padding: 0 12px 0 38px; background: transparent; color: #ECE8E1; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; text-align: left">Pair a new device…</button>
+<button type="button" style="display: flex; align-items: center; min-height: 40px; padding: 0 12px 0 38px; background: transparent; color: #ECE8E1; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; text-align: left">Unpair MacBook Pro</button>
+<div style="height: 1px; background: #3A4048; margin: 2px 6px"></div>
+<button type="button" style="display: flex; align-items: center; min-height: 40px; padding: 0 12px 0 38px; background: transparent; color: #ECE8E1; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; text-align: left">Quit mdp</button>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":360,"height":620}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

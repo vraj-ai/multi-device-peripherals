@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mdp — Arrange</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#121416;color:#ECE8E1}
+a{color:#F0A23B}a:hover{color:#F7C274}
+button:focus-visible,input:focus-visible{outline:2px solid #F0A23B;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 960px; height: 620px; box-sizing: border-box; display: flex; flex-direction: column; background: #121416; color: #ECE8E1; font-family: 'IBM Plex Sans', system-ui, sans-serif">
+<header style="display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid #30353C">
+<div style="display: flex; align-items: center; gap: 10px">
+<svg width="28" height="20" viewBox="0 0 28 20" fill="none" stroke="#F0A23B" stroke-width="2" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="1.5"></rect><rect x="13" y="7" width="14" height="10" rx="1.5" fill="#F0A23B"></rect></svg>
+<span style="font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 18px; letter-spacing: 0.02em">mdp</span>
+<span style="font-size: 15px; color: #A0A6AE">Arrange</span>
+</div>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid #30353C; border-radius: 999px; font-size: 13px">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: #5CC2B5"></span>
+<span>Linked to MacBook Pro</span>
+<span style="font-family: 'IBM Plex Mono', monospace; color: #A0A6AE">encrypted · 3 ms</span>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 13px; background: #3A2A12; color: #F7C274">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6z"></path></svg>
+<span>Focus: this PC</span>
+</div>
+</header>
+<div style="display: flex; flex-grow: 1; min-height: 0">
+<section aria-label="Display arrangement" style="position: relative; flex-grow: 1; background-color: #16191C; background-image: radial-gradient(#262A30 1px, transparent 1px); background-size: 20px 20px; overflow: hidden">
+<p style="position: absolute; left: 24px; top: 16px; margin: 0; font-size: 13px; color: #A0A6AE">Drag your Mac to the edge it sits against on your desk. Arrow keys work too.</p>
+<div style="position: absolute; left: 340px; top: 190px; width: 280px; height: 158px; box-sizing: border-box; background: #232830; border: 1.5px solid #4A525C; border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; justify-content: space-between">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<span style="font-weight: 600; font-size: 14px">This PC</span>
+<span style="font-size: 12px; color: #A0A6AE">Windows 11</span>
+</div>
+<div style="display: flex; gap: 6px">
+<span style="flex-grow: 1; height: 44px; border: 1px dashed #4A525C; border-radius: 3px"></span>
+<span style="flex-grow: 1; height: 44px; border: 1px dashed #4A525C; border-radius: 3px"></span>
+</div>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A0A6AE">2 displays · 3840×1080 pt</span>
+</div>
+<sc-if value="{{showEdge}}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; left: {{ex}}px; top: {{ey}}px; width: {{ew}}px; height: {{eh}}px; background: #F0A23B; border-radius: 2px; box-shadow: 0 0 12px rgba(240,162,59,0.55)"></div>
+</sc-if>
+<button type="button" aria-label="MacBook Pro display. Drag, or use arrow keys, to set which side it is on." onPointerDown="{{down}}" onPointerMove="{{move}}" onPointerUp="{{up}}" onKeyDown="{{key}}" style="position: absolute; left: {{px}}px; top: {{py}}px; width: 210px; height: 136px; box-sizing: border-box; margin: 0; background: #394350; border: 1.5px solid #8A96A4; border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; justify-content: space-between; text-align: left; color: #ECE8E1; font-family: inherit; cursor: grab; touch-action: none">
+<span style="display: flex; justify-content: space-between; align-items: baseline; width: 100%">
+<span style="font-weight: 600; font-size: 14px">MacBook Pro</span>
+<span style="font-size: 12px; color: #C5CBD2">macOS</span>
+</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #C5CBD2">1512×982 pt</span>
+</button>
+</section>
+<aside style="width: 272px; box-sizing: border-box; border-left: 1px solid #30353C; background: #1B1E22; padding: 20px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #A0A6AE">Arrangement</span>
+<span style="font-size: 16px; font-weight: 500">Mac is {{sideLabel}} of this PC</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #A0A6AE">offset {{offPt}} pt</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 14px">
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; min-height: 44px">
+<span>Share mouse &amp; keyboard</span>
+<input type="checkbox" checked style="width: 20px; height: 20px; accent-color: #F0A23B">
+</label>
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; min-height: 44px">
+<span>Sync clipboard text</span>
+<input type="checkbox" checked style="width: 20px; height: 20px; accent-color: #F0A23B">
+</label>
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; min-height: 44px">
+<span>Start at login</span>
+<input type="checkbox" style="width: 20px; height: 20px; accent-color: #F0A23B">
+</label>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid #30353C; border-radius: 6px">
+<span style="font-size: 12px; color: #A0A6AE">Take control back, always</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px">Ctrl + Alt + Shift + Esc</span>
+</div>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; gap: 10px">
+<button type="button" style="flex-grow: 1; min-height: 44px; background: transparent; color: #ECE8E1; border: 1px solid #4A525C; border-radius: 6px; font-family: inherit; font-size: 14px">Revert</button>
+<button type="button" style="flex-grow: 1; min-height: 44px; background: #F0A23B; color: #1A1206; border: 0; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 600">Save</button>
+</div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":620}}'>
+var L = { x: 340, y: 190, w: 280, h: 158 };
+var P = { w: 210, h: 136 };
+var MIN = 24;
+var PT_PER_PX = 13.7;
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function placed(side, off) {
+  if (side === 'left') return { x: L.x - P.w, y: L.y + off };
+  if (side === 'right') return { x: L.x + L.w, y: L.y + off };
+  if (side === 'above') return { x: L.x + off, y: L.y - P.h };
+  return { x: L.x + off, y: L.y + L.h };
+}
+function snap(px, py) {
+  var cx = px + P.w / 2 - (L.x + L.w / 2);
+  var cy = py + P.h / 2 - (L.y + L.h / 2);
+  if (Math.abs(cx) / ((L.w + P.w) / 2) >= Math.abs(cy) / ((L.h + P.h) / 2)) {
+    return { side: cx < 0 ? 'left' : 'right', off: clamp(py - L.y, -(P.h - MIN), L.h - MIN) };
+  }
+  return { side: cy < 0 ? 'above' : 'below', off: clamp(px - L.x, -(P.w - MIN), L.w - MIN) };
+}
+function edge(side, p) {
+  if (side === 'left' || side === 'right') {
+    var y0 = Math.max(L.y, p.y), y1 = Math.min(L.y + L.h, p.y + P.h);
+    return { x: (side === 'left' ? L.x : L.x + L.w) - 2, y: y0, w: 4, h: y1 - y0 };
+  }
+  var x0 = Math.max(L.x, p.x), x1 = Math.min(L.x + L.w, p.x + P.w);
+  return { x: x0, y: (side === 'above' ? L.y : L.y + L.h) - 2, w: x1 - x0, h: 4 };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var s = this.state || {};
+    var side = s.side || 'left';
+    var off = s.off == null ? -30 : s.off;
+    var p = s.dragging ? { x: s.px, y: s.py } : placed(side, off);
+    var e = edge(side, p);
+    var self = this;
+    return {
+      px: Math.round(p.x), py: Math.round(p.y),
+      showEdge: !s.dragging,
+      ex: e.x, ey: e.y, ew: e.w, eh: e.h,
+      sideLabel: { left: 'LEFT', right: 'RIGHT', above: 'ABOVE', below: 'BELOW' }[side],
+      offPt: Math.round(off * PT_PER_PX),
+      down: function (ev) {
+        if (ev.currentTarget.setPointerCapture) ev.currentTarget.setPointerCapture(ev.pointerId);
+        self.setState({ dragging: true, px: p.x, py: p.y });
+      },
+      move: function (ev) {
+        var st = self.state || {};
+        if (!st.dragging) return;
+        self.setState({ px: st.px + ev.movementX, py: st.py + ev.movementY });
+      },
+      up: function () {
+        var st = self.state || {};
+        if (!st.dragging) return;
+        var r = snap(st.px, st.py);
+        self.setState({ dragging: false, side: r.side, off: r.off });
+      },
+      key: function (ev) {
+        var map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'above', ArrowDown: 'below' };
+        if (!map[ev.key]) return;
+        ev.preventDefault();
+        self.setState({ side: map[ev.key], off: 0 });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

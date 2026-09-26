@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mdp — Pair</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#121416;color:#ECE8E1}
+a{color:#F0A23B}a:hover{color:#F7C274}
+</style>
+</helmet>
+<div style="width: 480px; height: 620px; box-sizing: border-box; padding: 40px 36px; display: flex; flex-direction: column; gap: 24px; background: #1B1E22; color: #ECE8E1; font-family: 'IBM Plex Sans', system-ui, sans-serif">
+<div style="display: flex; align-items: center; gap: 14px">
+<svg width="44" height="32" viewBox="0 0 28 20" fill="none" stroke="#F0A23B" stroke-width="1.6" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="1.5"></rect><rect x="13" y="7" width="14" height="10" rx="1.5"></rect></svg>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #A0A6AE">New device found</span>
+<h1 style="margin: 0; font-size: 22px; font-weight: 600">Pair with MacBook Pro?</h1>
+</div>
+</div>
+<p style="margin: 0; font-size: 15px; line-height: 1.5; color: #C5CBD2">The same code is showing on your Mac right now. Pair only if the two codes match exactly.</p>
+<div style="display: flex; justify-content: center; gap: 18px; padding: 28px 0; border: 1px solid #30353C; border-radius: 8px; background: #16191C">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 52px; font-weight: 500; letter-spacing: 0.08em">482</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 52px; font-weight: 500; letter-spacing: 0.08em; color: #F0A23B">913</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #A0A6AE">
+<span style="font-family: 'IBM Plex Mono', monospace">MacBook-Pro.local · 192.168.1.42</span>
+<span>Expires in 0:52</span>
+</div>
+<div style="flex-grow: 1"></div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<button type="button" style="min-height: 48px; background: #F0A23B; color: #1A1206; border: 0; border-radius: 6px; font-family: inherit; font-size: 15px; font-weight: 600">Codes match — pair</button>
+<button type="button" style="min-height: 48px; background: transparent; color: #ECE8E1; border: 1px solid #4A525C; border-radius: 6px; font-family: inherit; font-size: 15px">They don't match</button>
+</div>
+<p style="margin: 0; font-size: 12px; line-height: 1.5; color: #A0A6AE">After pairing, only this Mac can connect. Everything sent between the two is encrypted. Unpair from the tray menu at any time.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":480,"height":620}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
