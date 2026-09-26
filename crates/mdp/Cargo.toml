@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 mdp-core = { path = "../mdp-core" }
-arboard = "2"
+arboard = "3"
 directories = "6"
 hex = "0.4"
 mdns-sd = "0.15"
@@ -18,7 +18,6 @@ toml = "1"
 eframe = "0.36"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-arboard = { version = "3", default-features = false }
 core-foundation = "0.10"
 core-graphics = { version = "0.25", features = ["highsierra"] }
 
