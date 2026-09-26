@@ -399,6 +399,11 @@ pub fn pair() -> ExitCode {
     let result = (|| {
         let path = Config::default_path().map_err(|err| format!("config path: {err}"))?;
         let mut config = Config::load_or_create(&path).map_err(|err| format!("config: {err}"))?;
+        // A running app holds the port and its own copy of the config; it
+        // would write the old pin back. Refuse before touching the file.
+        std::net::TcpListener::bind(("0.0.0.0", config.port)).map_err(|_| {
+            "mdp is already running here; use its tray menu: Pair a new device…".to_string()
+        })?;
         config.clear_pinned_peer();
         config
             .save(&path)

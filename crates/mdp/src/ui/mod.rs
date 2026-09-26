@@ -206,7 +206,9 @@ impl eframe::App for App {
         let mut config = self.config.lock().expect("config lock");
         if let Some(ArrangeAction::Save(arrangement)) = self.view.ui(ui, &mut config) {
             self.save_config(&config);
-            if let Err(err) = crate::autostart::set(config.start_at_login) {
+            let start_at_login = config.start_at_login;
+            drop(config);
+            if let Err(err) = crate::autostart::set(start_at_login) {
                 eprintln!("mdp: start at login: {err}");
             }
             let frame = Frame::Arrangement {
