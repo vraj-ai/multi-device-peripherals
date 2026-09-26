@@ -38,6 +38,27 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
   `windows-latest` and `macos-latest`. This is the only macOS build signal for
   agents working on Windows.
 
+- **Crate split (as built):** `mdp-core` holds the platform-free pieces
+  (`proto`, `link`, `crossing`, `keymap`, `peer`, the `Platform` trait and
+  `FakePlatform`); OS impls, config, discovery, autostart, and UI live in
+  `mdp`, with `platform::Native` picking the OS impl.
+- **One peer loop for every entry point:** `mdp run`, `mdp pair`, and the app
+  (`mdp` / `mdp ui`, also what start-at-login launches) all run `run::serve`;
+  the app plugs in `AppHooks` (Pairing window, live status, per-Session
+  outbox). The config is one `Arc<Mutex<Config>>`; every mutate + save holds
+  the lock.
+- **Arrangement changes reconnect:** a saved Arrangement is sent as a frame
+  that ends the Session on both Peers; the receiver adopts the mirror and
+  saves, and both agree in the next Hello (last save wins).
+- **Frozen-cursor rule:** while suppressed, the local cursor stays at the
+  shared edge; forwarded motion is `reported − frozen`, never pre-clamped.
+- **Clipboard is per Session:** the echo guard is seeded with the current
+  clipboard at Session start (connecting never pushes what was already
+  copied); the share toggle is read per Session, so toggling reconnects.
+- **Hidden-window app:** closing the window hides it to the tray; tray,
+  Pairing, and status run in eframe's `App::logic`, which runs while hidden
+  when woken by `request_repaint`.
+
 ## Invariants
 
 - **No stuck keys:** on every Crossing, disconnect, or Source change, the side
@@ -52,6 +73,11 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
   before the Noise handshake completes with a pinned peer.
 - **Crossing latency:** local-LAN cursor motion added latency p95 < 10 ms,
   measured by the `latency` loopback bench.
+- **Hooks capture while suppressed:** physical input is always captured,
+  even when swallowed; injected input is never captured nor swallowed
+  (`hook_decision` test on Windows, tap logic on macOS).
+- **Every Session end runs the disconnect actions:** all `Peer::drive` exits
+  (link loss, Arrangement change, app close) go through `finish()`.
 - **Escape hatch:** a hard-coded chord (Ctrl+Alt+Shift+Esc on the Source)
   always returns the cursor and keyboard to the local machine.
 
