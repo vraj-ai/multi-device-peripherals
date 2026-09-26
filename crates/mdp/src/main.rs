@@ -1,5 +1,6 @@
 //! `mdp`: one binary for both Peers (Source and Sink are roles, not builds).
 
+mod autostart;
 mod config;
 mod discovery;
 mod platform;
@@ -14,7 +15,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 fn help_text() -> &'static str {
     "mdp - share one mouse and keyboard between two machines\n\
      \n\
-     Usage: mdp <COMMAND>\n\
+     Usage: mdp [COMMAND]   (no command: open the app)\n\
      \n\
      Commands:\n\
      \x20 run       Run the peer (capture, share, and inject input)\n\
@@ -76,9 +77,38 @@ fn selftest_platform() -> ExitCode {
     run_stub("selftest")
 }
 
+fn run_ui() -> ExitCode {
+    match ui::run_demo() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("ui: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// On Windows, drop the console when this process owns it (double-click or
+/// start at login); keep it when launched from an existing terminal.
+fn detach_console() {
+    #[cfg(windows)]
+    // SAFETY: argument-free console queries on our own process.
+    unsafe {
+        use windows::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
+        let mut pids = [0u32; 2];
+        if GetConsoleProcessList(&mut pids) == 1 {
+            let _ = FreeConsole();
+        }
+    }
+}
+
 fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
-        None | Some("-h") | Some("--help") => {
+        // Double-click / start at login: open the app, without a console window.
+        None => {
+            detach_console();
+            run_ui()
+        }
+        Some("-h") | Some("--help") => {
             print!("{}", help_text());
             ExitCode::SUCCESS
         }
@@ -86,13 +116,10 @@ fn main() -> ExitCode {
             print!("{}", version_text());
             ExitCode::SUCCESS
         }
-        Some("ui") => match ui::run_demo() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(err) => {
-                eprintln!("ui: {err}");
-                ExitCode::FAILURE
-            }
-        },
+        Some("ui") => {
+            detach_console();
+            run_ui()
+        }
         Some("run") => run::run(),
         Some("pair") => run_stub("pair"),
         Some("selftest") => selftest_platform(),
