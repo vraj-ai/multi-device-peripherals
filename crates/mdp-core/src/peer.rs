@@ -1,10 +1,14 @@
 //! One Peer's wiring: Crossing engine <-> Link frames, and the drive loop.
 //!
 //! [`to_wire`]/[`from_wire`] map the engine's [`CrossingFrame`]s 1:1 onto
-//! the [`Frame`]s the [`Link`] carries. The non-crossing frames (Hello,
-//! Arrangement, Clipboard, Ping/Pong) never reach the engine: the [`Peer`]
-//! answers Ping, timestamps Pong for the tray latency, consumes the rest,
-//! and clipboard sync lands in a later ticket.
+//! the [`Frame`]s the [`Link`] carries. The other handshake frames never
+//! reach the engine: the [`Peer`] answers Ping, timestamps Pong for the
+//! tray latency, and consumes the rest.
+//!
+//! Clipboard text sync lives here too, so `mdp run` and the app share it:
+//! the [`Peer`] polls the local clipboard, sends changed UTF-8 text (at
+//! most 1 MiB, never empty) when sharing is on, and on receive sets the
+//! local clipboard while remembering the value so it is never echoed back.
 //!
 //! [`mirror_wire`] adopts a received Arrangement with the same semantics as
 //! `ui::arrange::mirror`: the side flips, the offset negates.
@@ -19,18 +23,30 @@
 
 use crate::crossing::{CrossingAction, CrossingEngine, CrossingFrame, EngineOutput, Focus, Side};
 use crate::link::{Link, LinkError};
-use crate::platform::{Desktop, InputEvent, Platform, PlatformError};
+use crate::platform::{Desktop, InputEvent, Platform, PlatformError, CLIPBOARD_MAX_BYTES};
 use crate::proto::{ArrangementSide, Frame, PROTOCOL_VERSION};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::watch;
 
 /// Ping interval: keepalive plus fresh round-trip samples for the tray.
 const HEARTBEAT: Duration = Duration::from_secs(5);
+/// Local clipboard poll interval.
+const CLIPBOARD_POLL: Duration = Duration::from_millis(500);
 /// Shutdown poll while the capture bridge idles.
 const BRIDGE_POLL: Duration = Duration::from_millis(50);
+
+/// Whether a clipboard read may be sent: sharing is on, the text is
+/// non-empty UTF-8 within the 1 MiB cap, and it differs from what was last
+/// sent or received (the echo guard).
+fn clipboard_sendable(share: bool, last: &Option<String>, current: &str) -> bool {
+    share
+        && !current.is_empty()
+        && current.len() <= CLIPBOARD_MAX_BYTES
+        && last.as_deref() != Some(current)
+}
 
 /// Engine frame -> wire frame. The engine only emits crossing frames.
 pub fn to_wire(frame: &CrossingFrame) -> Frame {
@@ -259,6 +275,9 @@ pub struct Peer<P> {
     done: Arc<AtomicBool>,
     cursor: (f64, f64),
     last_rtt: Option<Duration>,
+    share_clipboard: bool,
+    last_clipboard: Option<String>,
+    last_poll: Instant,
     status: Option<watch::Sender<PeerStatus>>,
     outbox: Option<UnboundedReceiver<Frame>>,
 }
@@ -273,7 +292,11 @@ impl<P: Platform> Peer<P> {
         capture: std::sync::mpsc::Receiver<InputEvent>,
         engine: CrossingEngine,
         local: Desktop,
+        share_clipboard: bool,
     ) -> Self {
+        // Seed the echo guard with what is already copied: only changes made
+        // during the session sync, so connecting never clobbers either side.
+        let last_clipboard = platform.clipboard_get().ok();
         let (tx, inbox) = unbounded_channel();
         let done = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&done);
@@ -286,6 +309,9 @@ impl<P: Platform> Peer<P> {
             done,
             cursor: (local.x + local.width / 2.0, local.y + local.height / 2.0),
             last_rtt: None,
+            share_clipboard,
+            last_clipboard,
+            last_poll: Instant::now(),
             status: None,
             outbox: None,
         }
@@ -353,7 +379,9 @@ impl<P: Platform> Peer<P> {
     }
 
     /// Process one local event or one Link frame, whichever comes first.
+    /// Also runs the clipboard poll when it is due.
     pub async fn drive_step(&mut self) -> Result<(), PeerError> {
+        self.poll_clipboard().await?;
         tokio::select! {
             biased;
             event = self.inbox.recv() => {
@@ -423,6 +451,34 @@ impl<P: Platform> Peer<P> {
         self.emit(out).await
     }
 
+    /// Poll the local clipboard when due; send changed text within the
+    /// cap while sharing is on. Get failures (locked, empty, non-text)
+    /// just wait for the next tick.
+    async fn poll_clipboard(&mut self) -> Result<(), PeerError> {
+        if !self.share_clipboard || self.last_poll.elapsed() < CLIPBOARD_POLL {
+            return Ok(());
+        }
+        self.last_poll = Instant::now();
+        let Ok(current) = self.platform.clipboard_get() else {
+            return Ok(());
+        };
+        if !clipboard_sendable(self.share_clipboard, &self.last_clipboard, &current) {
+            // Oversize text is still remembered so a stuck clipboard does
+            // not retry every tick; the codec would refuse it anyway.
+            if current.len() > CLIPBOARD_MAX_BYTES {
+                self.last_clipboard = Some(current);
+            }
+            return Ok(());
+        }
+        self.link
+            .send_frame(&Frame::Clipboard {
+                text: current.clone(),
+            })
+            .await?;
+        self.last_clipboard = Some(current);
+        Ok(())
+    }
+
     async fn note_remote(&mut self, frame: Frame) -> Result<(), PeerError> {
         match frame {
             Frame::Ping { t } => {
@@ -434,9 +490,19 @@ impl<P: Platform> Peer<P> {
             Frame::Arrangement { side, offset } => {
                 return Err(PeerError::ArrangementChanged(Some((side, offset))));
             }
-            Frame::Hello { .. } | Frame::Clipboard { .. } => {
-                // Late handshake frames and clipboard (sync lands in a
-                // later ticket): consumed, ignored.
+            Frame::Hello { .. } => {
+                // Late handshake frames after exchange_hello; ignored.
+            }
+            Frame::Clipboard { text } => {
+                // Best effort: a locked clipboard just misses this update;
+                // the value is remembered only once it actually sticks, so
+                // a failed set cannot desync the echo guard.
+                if self.share_clipboard
+                    && text.len() <= CLIPBOARD_MAX_BYTES
+                    && self.platform.clipboard_set(&text).is_ok()
+                {
+                    self.last_clipboard = Some(text);
+                }
             }
             other => {
                 if let Some(crossing) = from_wire(&other) {
@@ -599,5 +665,29 @@ mod tests {
             assert_eq!(side_to_wire(crossing), wire);
             assert_eq!(side_from_wire(wire), crossing);
         }
+    }
+
+    #[test]
+    fn clipboard_send_gate() {
+        assert!(clipboard_sendable(true, &None, "hello"));
+        assert!(clipboard_sendable(
+            true,
+            &None,
+            &"x".repeat(CLIPBOARD_MAX_BYTES)
+        ));
+        // Echo guard: what was last sent or received never goes out again.
+        assert!(!clipboard_sendable(
+            true,
+            &Some("hello".to_string()),
+            "hello"
+        ));
+        // Sharing off, empty text, and oversize text never send.
+        assert!(!clipboard_sendable(false, &None, "hello"));
+        assert!(!clipboard_sendable(true, &None, ""));
+        assert!(!clipboard_sendable(
+            true,
+            &None,
+            &"x".repeat(CLIPBOARD_MAX_BYTES + 1)
+        ));
     }
 }

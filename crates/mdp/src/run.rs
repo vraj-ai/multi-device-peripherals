@@ -311,7 +311,14 @@ async fn round(
     let capture = platform
         .start_capture()
         .map_err(|err| format!("capture: {err}"))?;
-    let mut peer = Peer::new(platform, link, capture, engine, *desktop);
+    let mut peer = Peer::new(
+        platform,
+        link,
+        capture,
+        engine,
+        *desktop,
+        config.share_clipboard,
+    );
     if let Some(app) = app {
         let (outbox, rx) = tokio::sync::mpsc::unbounded_channel();
         *app.session.lock().expect("session lock") = Some(outbox);

@@ -123,6 +123,9 @@ impl App {
                     let mut config = self.config.lock().expect("config lock");
                     config.share_clipboard = on;
                     self.save_config(&config);
+                    drop(config);
+                    // The Peer reads the toggle per session: reconnect to apply.
+                    self.end_session();
                 }
                 TrayCommand::OpenArrange => show(ctx),
                 TrayCommand::Pair | TrayCommand::Unpair => {
