@@ -4,6 +4,7 @@ mod config;
 mod discovery;
 mod platform;
 mod selftest;
+mod ui;
 
 use std::process::ExitCode;
 
@@ -51,19 +52,22 @@ fn finish_selftest(result: Result<selftest::SelftestReport, String>) -> ExitCode
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn selftest_platform() -> ExitCode {
-    let mut platform = platform::windows::WindowsPlatform::new();
-    let home = platform::windows::WindowsPlatform::cursor_position();
-    finish_selftest(selftest::run_selftest(&mut platform, home))
+    let mut platform = platform::Native::new();
+    finish_selftest(selftest::run_selftest(&mut platform, selftest_home()))
 }
 
-#[cfg(target_os = "macos")]
-fn selftest_platform() -> ExitCode {
-    // T6 implements the macOS platform; the neutral core runs against the
-    // stub until then and reports Unsupported clearly.
-    let mut platform = platform::macos::MacosPlatform::new();
-    finish_selftest(selftest::run_selftest(&mut platform, (0.0, 0.0)))
+#[cfg(target_os = "windows")]
+fn selftest_home() -> (f64, f64) {
+    platform::windows::WindowsPlatform::cursor_position()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn selftest_home() -> (f64, f64) {
+    // Only Windows exposes a cursor getter so far; the neutral core still
+    // runs everywhere, and other OSes get a true home once they add one.
+    (0.0, 0.0)
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -81,7 +85,14 @@ fn main() -> ExitCode {
             print!("{}", version_text());
             ExitCode::SUCCESS
         }
-        Some(command @ ("run" | "ui" | "pair")) => run_stub(command),
+        Some("ui") => match ui::run_demo() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("ui: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        Some(command @ ("run" | "pair")) => run_stub(command),
         Some("selftest") => selftest_platform(),
         Some(flag) if flag.starts_with('-') => {
             eprintln!("error: unexpected flag '{flag}'\n");
