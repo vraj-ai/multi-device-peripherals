@@ -39,5 +39,11 @@ The one-time confirmation of a 6-digit code that pins each Peer's static key.
 _Avoid_: login, handshake (the Noise handshake happens on every connect)
 
 **Link**:
-The encrypted TCP connection between the two paired Peers.
-_Avoid_: session, socket
+The encrypted TCP connection between the two paired Peers. One Link carries
+one Session.
+_Avoid_: socket
+
+**Session**:
+One connect-to-disconnect run of the Link: handshake, Hello, then input until
+the Link drops, an Arrangement changes, or the app ends it.
+_Avoid_: connection, round
