@@ -6,3 +6,6 @@ CONTEXT/goals/*/*.log
 CONTEXT/worktrees/**/*.log
 CONTEXT/worktrees/**/results.json
 CONTEXT/worktrees/**/*.digest.json
+
+# Rust build output
+/target/
