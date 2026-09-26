@@ -122,6 +122,12 @@ extern "C" {
     fn CGEventTapEnable(tap: *mut c_void, enable: bool);
 }
 
+/// `(accessibility, input_monitoring)` grants for this process.
+pub fn permission_flags() -> (bool, bool) {
+    // SAFETY: argument-free status queries.
+    unsafe { (AXIsProcessTrusted(), CGPreflightListenEventAccess()) }
+}
+
 /// A `flagsChanged` event names the modifier key that moved and the flags
 /// after the change; turn that into HID key transitions. Caps Lock only
 /// reports toggles, so it becomes a full press + release.
@@ -512,9 +518,7 @@ impl Platform for MacosPlatform {
     }
 
     fn check_permissions(&self) -> Result<PermissionStatus, PlatformError> {
-        // SAFETY: argument-free status queries.
-        let (ax, listen) = unsafe { (AXIsProcessTrusted(), CGPreflightListenEventAccess()) };
-        match (ax, listen) {
+        match permission_flags() {
             (true, true) => Ok(PermissionStatus::Granted),
             (false, true) => Err(PlatformError::PermissionDenied(
                 "Accessibility (System Settings > Privacy & Security > Accessibility)",

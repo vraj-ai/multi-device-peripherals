@@ -1,8 +1,10 @@
 //! egui windows. `theme` holds the locked tokens; `arrange` is the Arrange
-//! window; `pairing` the Pairing window; `tray` the tray/menu-bar icon.
+//! window; `pairing` the Pairing window; `permissions` the macOS grants
+//! screen; `tray` the tray/menu-bar icon.
 
 pub mod arrange;
 pub mod pairing;
+pub mod permissions;
 pub mod theme;
 pub mod tray;
 
@@ -11,6 +13,7 @@ use arrange::{ArrangeAction, ArrangeView, LinkStatus};
 use eframe::egui;
 use mdp_core::Desktop;
 use pairing::{PairingRequest, PairingView};
+use permissions::{Permissions, PermissionsAction};
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 use tray::{Tray, TrayCommand};
@@ -22,6 +25,24 @@ struct App {
     /// Pairing requests from the Link (`pairing::bridge`).
     pair_requests: Option<Receiver<PairingRequest>>,
     pairing: Option<(PairingView, PairingRequest)>,
+    /// Live grants on macOS; `None` where no grants are needed.
+    permissions: Option<Permissions>,
+    /// Write config / autostart on Save (off for the demo).
+    persist: bool,
+}
+
+/// This Peer's permission grants, if the OS gates input on them.
+fn current_permissions() -> Option<Permissions> {
+    #[cfg(target_os = "macos")]
+    {
+        let (accessibility, input_monitoring) = crate::platform::macos::permission_flags();
+        Some(Permissions {
+            accessibility,
+            input_monitoring,
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
 }
 
 impl App {
@@ -77,8 +98,24 @@ impl eframe::App for App {
             }
             return;
         }
+        if let Some(perms) = self.permissions.filter(|p| !p.all_granted()) {
+            match permissions::ui(ui, perms) {
+                Some(PermissionsAction::OpenSettings(pane)) => permissions::open_settings(pane),
+                Some(PermissionsAction::CheckAgain) => self.permissions = current_permissions(),
+                None => {}
+            }
+            // Grants land while System Settings is open: keep re-checking.
+            self.permissions = current_permissions();
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
+            return;
+        }
         if let Some(ArrangeAction::Save(arrangement)) = self.view.ui(ui, &mut self.config) {
-            // ponytail: demo only prints; T8/T9 persist config and send the frame.
+            if self.persist {
+                if let Err(err) = crate::autostart::set(self.config.start_at_login) {
+                    eprintln!("start at login: {err}");
+                }
+            }
+            // ponytail: T8 (#9) persists config and sends the Arrangement frame.
             println!("save: {arrangement:?}");
         }
         // Keep polling the tray menu while idle.
@@ -119,6 +156,8 @@ pub fn run_demo() -> eframe::Result {
                 tray: Some(tray),
                 pair_requests: None,
                 pairing: None,
+                permissions: current_permissions(),
+                persist: false,
             }))
         }),
     )
