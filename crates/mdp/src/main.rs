@@ -3,6 +3,7 @@
 mod config;
 mod discovery;
 mod platform;
+mod ui;
 
 use mdp_core::{Desktop, FakePlatform, InputEvent, Platform};
 use std::process::ExitCode;
@@ -74,7 +75,14 @@ fn main() -> ExitCode {
             print!("{}", version_text());
             ExitCode::SUCCESS
         }
-        Some(command @ ("run" | "ui" | "pair")) => run_stub(command),
+        Some("ui") => match ui::run_demo() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("ui: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        Some(command @ ("run" | "pair")) => run_stub(command),
         Some("selftest") => selftest(),
         Some(flag) if flag.starts_with('-') => {
             eprintln!("error: unexpected flag '{flag}'\n");
