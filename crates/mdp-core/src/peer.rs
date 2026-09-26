@@ -29,6 +29,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::watch;
 
 /// Ping interval: keepalive plus fresh round-trip samples for the tray.
 const HEARTBEAT: Duration = Duration::from_secs(5);
@@ -132,8 +133,25 @@ pub fn side_from_wire(side: ArrangementSide) -> Side {
 pub enum PeerError {
     Link(LinkError),
     Platform(PlatformError),
-    Version { expected: u32, got: u32 },
+    Version {
+        expected: u32,
+        got: u32,
+    },
     Handshake(String),
+    /// A new Arrangement was saved on either Peer: the session ends so both
+    /// sides reconnect and agree on it in the Hello. `side`/`offset` are the
+    /// *sender's* view (adopt with [`mirror_wire`]); `None` when this side
+    /// sent it.
+    ArrangementChanged(Option<(ArrangementSide, f64)>),
+    /// The app dropped the session's outbox sender (unpair, pause, quit).
+    Closed,
+}
+
+/// Live state of a driving Peer, for the tray and header pills.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PeerStatus {
+    pub focus_here: bool,
+    pub rtt_ms: Option<u64>,
 }
 
 impl std::fmt::Display for PeerError {
@@ -148,6 +166,8 @@ impl std::fmt::Display for PeerError {
                 )
             }
             Self::Handshake(message) => write!(f, "peer handshake failed: {message}"),
+            Self::ArrangementChanged(_) => write!(f, "arrangement changed; reconnecting"),
+            Self::Closed => write!(f, "session closed by the app"),
         }
     }
 }
@@ -258,6 +278,8 @@ pub struct Peer<P> {
     share_clipboard: bool,
     last_clipboard: Option<String>,
     last_poll: Instant,
+    status: Option<watch::Sender<PeerStatus>>,
+    outbox: Option<UnboundedReceiver<Frame>>,
 }
 
 impl<P: Platform> Peer<P> {
@@ -290,6 +312,39 @@ impl<P: Platform> Peer<P> {
             share_clipboard,
             last_clipboard,
             last_poll: Instant::now(),
+            status: None,
+            outbox: None,
+        }
+    }
+
+    /// Publish [`PeerStatus`] after every step (for the app's tray / pills).
+    pub fn with_status(mut self, status: watch::Sender<PeerStatus>) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// Frames the app wants sent mid-session (e.g. a saved Arrangement).
+    pub fn with_outbox(mut self, outbox: UnboundedReceiver<Frame>) -> Self {
+        self.outbox = Some(outbox);
+        self
+    }
+
+    fn publish_status(&self) {
+        if let Some(status) = &self.status {
+            let now = PeerStatus {
+                focus_here: self.engine.focus() == Focus::Local,
+                rtt_ms: self.last_rtt_ms(),
+            };
+            status.send_if_modified(|old| std::mem::replace(old, now) != now);
+        }
+    }
+
+    /// Next app frame (`None` = the app closed the session), or never when
+    /// there is no outbox.
+    async fn next_outgoing(outbox: &mut Option<UnboundedReceiver<Frame>>) -> Option<Frame> {
+        match outbox {
+            Some(rx) => rx.recv().await,
+            None => std::future::pending().await,
         }
     }
 
@@ -346,6 +401,7 @@ impl<P: Platform> Peer<P> {
     pub async fn drive(&mut self) -> PeerError {
         let mut heartbeat = tokio::time::interval(HEARTBEAT);
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut outbox = self.outbox.take();
         loop {
             let step: Result<(), PeerError> = tokio::select! {
                 biased;
@@ -355,8 +411,20 @@ impl<P: Platform> Peer<P> {
                         .await
                         .map_err(PeerError::Link)
                 }
+                frame = Self::next_outgoing(&mut outbox) => match frame {
+                    None => Err(PeerError::Closed),
+                    Some(frame) => {
+                        let saved = matches!(frame, Frame::Arrangement { .. });
+                        match self.link.send_frame(&frame).await {
+                            Ok(()) if saved => Err(PeerError::ArrangementChanged(None)),
+                            Ok(()) => Ok(()),
+                            Err(err) => Err(PeerError::Link(err)),
+                        }
+                    }
+                },
                 outcome = self.drive_step() => outcome,
             };
+            self.publish_status();
             if let Err(err) = step {
                 return self.finish(err);
             }
@@ -419,7 +487,10 @@ impl<P: Platform> Peer<P> {
             Frame::Pong { t } => {
                 self.last_rtt = Some(Duration::from_millis(now_millis().saturating_sub(t)));
             }
-            Frame::Hello { .. } | Frame::Arrangement { .. } => {
+            Frame::Arrangement { side, offset } => {
+                return Err(PeerError::ArrangementChanged(Some((side, offset))));
+            }
+            Frame::Hello { .. } => {
                 // Late handshake frames after exchange_hello; ignored.
             }
             Frame::Clipboard { text } => {

@@ -32,11 +32,6 @@ fn version_text() -> String {
     format!("mdp {VERSION}\n")
 }
 
-fn run_stub(command: &str) -> ExitCode {
-    println!("{command}: not yet implemented (T1 stub)");
-    ExitCode::SUCCESS
-}
-
 fn finish_selftest(result: Result<selftest::SelftestReport, String>) -> ExitCode {
     match result {
         Ok(report) => {
@@ -78,10 +73,10 @@ fn selftest_platform() -> ExitCode {
 }
 
 fn run_ui() -> ExitCode {
-    match ui::run_demo() {
+    match ui::run_app() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("ui: {err}");
+            eprintln!("mdp: {err}");
             ExitCode::FAILURE
         }
     }
@@ -121,7 +116,7 @@ fn main() -> ExitCode {
             run_ui()
         }
         Some("run") => run::run(),
-        Some("pair") => run_stub("pair"),
+        Some("pair") => run::pair(),
         Some("selftest") => selftest_platform(),
         Some(flag) if flag.starts_with('-') => {
             eprintln!("error: unexpected flag '{flag}'\n");

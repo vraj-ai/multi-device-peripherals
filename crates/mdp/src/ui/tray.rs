@@ -92,6 +92,7 @@ pub enum TrayCommand {
 /// event loop starts (inside the eframe app creator).
 pub struct Tray {
     icon: TrayIcon,
+    events: std::sync::mpsc::Receiver<MenuEvent>,
     status: MenuItem,
     share_input: CheckMenuItem,
     share_clipboard: CheckMenuItem,
@@ -102,11 +103,19 @@ pub struct Tray {
 }
 
 impl Tray {
+    /// `wake` runs on every menu pick so a hidden app still reacts
+    /// (eframe calls `App::logic` after `request_repaint`).
     pub fn new(
         peer_name: &str,
         share_input: bool,
         share_clipboard: bool,
+        wake: impl Fn() + Send + Sync + 'static,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let (events_tx, events) = std::sync::mpsc::channel();
+        MenuEvent::set_event_handler(Some(move |event| {
+            let _ = events_tx.send(event);
+            wake();
+        }));
         let status = MenuItem::new("Not linked", false, None);
         let share_input = CheckMenuItem::new("Share mouse & keyboard", true, share_input, None);
         let share_clipboard =
@@ -135,6 +144,7 @@ impl Tray {
             .build()?;
         Ok(Self {
             icon,
+            events,
             status,
             share_input,
             share_clipboard,
@@ -156,7 +166,7 @@ impl Tray {
     /// Menu picks since the last call.
     pub fn poll(&self) -> Vec<TrayCommand> {
         let mut commands = Vec::new();
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
+        while let Ok(event) = self.events.try_recv() {
             let id = event.id();
             commands.push(if id == self.share_input.id() {
                 TrayCommand::ShareInput(self.share_input.is_checked())

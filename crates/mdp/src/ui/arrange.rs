@@ -38,6 +38,7 @@ pub fn snap(peer_tile_pos: Pos2, local: Rect, peer_size: Vec2) -> (Side, f32) {
 
 /// The Arrangement the other Peer stores for the same physical layout: the
 /// opposite side, and the offset measured from its own Desktop.
+#[cfg(test)]
 pub fn mirror(a: Arrangement) -> Arrangement {
     let side = match a.side {
         Side::Left => Side::Right,
@@ -141,9 +142,15 @@ impl ArrangeView {
 
     /// The other Peer saved `from_peer`; last save wins, so it replaces any
     /// unsaved edit here.
-    #[allow(dead_code)] // ponytail: T8 (#9) calls this on a received Frame::Arrangement.
+    #[cfg(test)]
     pub fn receive(&mut self, config: &mut Config, from_peer: Arrangement) {
         config.arrangement = mirror(from_peer);
+        self.draft = None;
+    }
+
+    /// The peer's saved Arrangement was adopted into the config (see
+    /// `run.rs`): drop any unsaved edit so the view shows it.
+    pub fn discard_draft(&mut self) {
         self.draft = None;
     }
 

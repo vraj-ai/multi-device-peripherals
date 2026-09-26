@@ -437,3 +437,72 @@ async fn mouse_move_loopback_latency_p95_under_10ms() {
         "p95 {p95:?} exceeds the 10 ms budget"
     );
 }
+
+#[tokio::test]
+async fn saved_arrangement_ends_both_sessions_with_the_senders_view() {
+    use mdp_core::proto::ArrangementSide;
+    let right = Arrangement {
+        side: Side::Right,
+        offset: 0.0,
+    };
+    let left = Arrangement {
+        side: Side::Left,
+        offset: 0.0,
+    };
+    let (a, mut b) = pair(right, left).await;
+    let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut a = a.with_outbox(out_rx);
+    out_tx
+        .send(Frame::Arrangement {
+            side: ArrangementSide::Top,
+            offset: 5.0,
+        })
+        .unwrap();
+    let both = async { tokio::join!(a.drive(), b.drive()) };
+    let (end_a, end_b) = tokio::time::timeout(Duration::from_secs(2), both)
+        .await
+        .expect("both sessions end");
+    assert!(
+        matches!(end_a, PeerError::ArrangementChanged(None)),
+        "{end_a}"
+    );
+    assert!(
+        matches!(
+            end_b,
+            PeerError::ArrangementChanged(Some((ArrangementSide::Top, offset))) if offset == 5.0
+        ),
+        "{end_b}"
+    );
+}
+
+#[tokio::test]
+async fn dropping_the_outbox_closes_the_session_and_status_is_published() {
+    use mdp_core::peer::PeerStatus;
+    let right = Arrangement {
+        side: Side::Right,
+        offset: 0.0,
+    };
+    let left = Arrangement {
+        side: Side::Left,
+        offset: 0.0,
+    };
+    let (a, _b) = pair(right, left).await;
+    let (status_tx, status_rx) = tokio::sync::watch::channel(PeerStatus {
+        focus_here: false,
+        rtt_ms: Some(999),
+    });
+    let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<Frame>();
+    let mut a = a.with_outbox(out_rx).with_status(status_tx);
+    drop(out_tx);
+    let end = tokio::time::timeout(Duration::from_secs(2), a.drive())
+        .await
+        .expect("session ends");
+    assert!(matches!(end, PeerError::Closed), "{end}");
+    assert_eq!(
+        *status_rx.borrow(),
+        PeerStatus {
+            focus_here: true,
+            rtt_ms: None
+        }
+    );
+}

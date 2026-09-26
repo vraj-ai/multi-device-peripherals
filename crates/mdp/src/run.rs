@@ -7,22 +7,31 @@
 //! Link drops — then backs off and reconnects. The `confirm` callback is a
 //! parameter (not hardcoded CLI) so `mdp ui` can pass `ui::pairing::bridge`
 //! instead; both satisfy `Fn(&str) -> bool + Send + Sync`.
+//!
+//! The app (`mdp` / `mdp ui`) runs this same loop on a background thread
+//! with [`AppHooks`]: Pairing goes to the Pairing window, live status to the
+//! tray and pills, and a per-session outbox lets the app send a saved
+//! Arrangement or end the session (unpair, pause sharing).
 
-use crate::config::{Config, Side as ConfigSide};
+use crate::config::{Arrangement as ConfigArrangement, Config, Side as ConfigSide};
 use crate::discovery::{select_peer_target, Discovery, PeerCandidate, PeerTarget};
 use crate::platform::Native;
+use crate::ui::pairing::{self, PairingRequest};
 use mdp_core::crossing::{
     Arrangement as CrossingArrangement, CrossingEngine, Side as CrossingSide,
 };
 use mdp_core::link::{Link, LinkError, PeerKey, StaticKeypair};
-use mdp_core::peer::{exchange_hello, mirror_wire, side_to_wire, Peer, PeerError};
+use mdp_core::peer::{exchange_hello, mirror_wire, side_to_wire, Peer, PeerError, PeerStatus};
 use mdp_core::platform::{Desktop, Platform};
-use mdp_core::proto::ArrangementSide;
+use mdp_core::proto::{ArrangementSide, Frame};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::watch;
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(500);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
@@ -38,8 +47,42 @@ fn config_side_to_crossing(side: ConfigSide) -> CrossingSide {
     }
 }
 
+/// Wire side -> config side.
+fn config_side_from_wire(side: ArrangementSide) -> ConfigSide {
+    match side {
+        ArrangementSide::Left => ConfigSide::Left,
+        ArrangementSide::Right => ConfigSide::Right,
+        ArrangementSide::Top => ConfigSide::Top,
+        ArrangementSide::Bottom => ConfigSide::Bottom,
+    }
+}
+
+/// Live Link state the app shows (tray glyph, header pills, Arrange tiles).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LiveStatus {
+    pub linked: bool,
+    pub peer_name: String,
+    pub peer_desktop: Option<Desktop>,
+    pub focus_here: bool,
+    pub rtt_ms: Option<u64>,
+    /// Bumps each time the peer's saved Arrangement was adopted.
+    pub arrangement_rev: u64,
+}
+
+/// What the app plugs into the loop. Cloneable handles only.
+#[derive(Clone)]
+pub struct AppHooks {
+    pub status: watch::Sender<LiveStatus>,
+    /// The live session's outbox: send a Frame, or `take()` it to end the
+    /// session cleanly (unpair, pause sharing).
+    pub session: Arc<Mutex<Option<UnboundedSender<Frame>>>>,
+    pub pairing: std::sync::mpsc::Sender<PairingRequest>,
+    /// Wakes the UI thread (egui repaint) after a status change or request.
+    pub wake: Arc<dyn Fn() + Send + Sync>,
+}
+
 /// Config side -> wire side (both cover all four sides).
-fn config_side_to_wire(side: ConfigSide) -> ArrangementSide {
+pub(crate) fn config_side_to_wire(side: ConfigSide) -> ArrangementSide {
     side_to_wire(config_side_to_crossing(side))
 }
 
@@ -186,14 +229,21 @@ where
 /// One connect-drive cycle: establish, pin, shake hands, drive till the Link
 /// drops. A fresh platform per round keeps capture reinstallable.
 async fn round(
-    config: &mut Config,
+    shared: &Mutex<Config>,
     config_path: &Path,
     keypair: &StaticKeypair,
     desktop: &Desktop,
     listener: &TcpListener,
     discovery: Option<&Discovery>,
+    app: Option<&AppHooks>,
 ) -> Result<(), String> {
-    let (dial, peer_desc) = resolve_target(config, discovery, keypair)?;
+    let config = shared.lock().expect("config lock").clone();
+    if !config.share_input {
+        // Sharing paused from the tray: stay off the network until resumed.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        return Ok(());
+    }
+    let (dial, peer_desc) = resolve_target(&config, discovery, keypair)?;
     let pinned = config
         .pinned_peer_key()
         .map_err(|err| format!("pinned key: {err}"))?;
@@ -201,7 +251,17 @@ async fn round(
         Some(key) => std::slice::from_ref(key),
         None => &[],
     };
-    let confirm = cli_confirm(peer_desc);
+    let confirm: Box<dyn Fn(&str) -> bool + Send + Sync> = match app {
+        Some(app) => {
+            let wake = Arc::clone(&app.wake);
+            let ask = pairing::confirm_via(app.pairing.clone(), peer_desc);
+            Box::new(move |code| {
+                wake();
+                ask(code)
+            })
+        }
+        None => Box::new(cli_confirm(peer_desc)),
+    };
     let (mut link, peer_key, dial_name) =
         establish(listener, dial.as_ref(), keypair, pinned_list, &confirm)
             .await
@@ -212,12 +272,19 @@ async fn round(
             .or(config.pinned_peer_name.as_deref())
             .unwrap_or("peer")
             .to_string();
-        config.set_pinned_peer(&name, &peer_key);
-        config
+        let mut locked = shared.lock().expect("config lock");
+        locked.set_pinned_peer(&name, &peer_key);
+        locked
             .save(config_path)
             .map_err(|err| format!("save config: {err}"))?;
         println!("mdp run: pinned peer {name}");
     }
+    let peer_name = shared
+        .lock()
+        .expect("config lock")
+        .pinned_peer_name
+        .clone()
+        .unwrap_or_else(|| "peer".to_string());
     let my_side = config_side_to_wire(config.arrangement.side);
     let (peer_desktop, (peer_side, peer_offset)) =
         exchange_hello(&mut link, desktop, my_side, config.arrangement.offset)
@@ -252,8 +319,60 @@ async fn round(
         *desktop,
         config.share_clipboard,
     );
+    if let Some(app) = app {
+        let (outbox, rx) = tokio::sync::mpsc::unbounded_channel();
+        *app.session.lock().expect("session lock") = Some(outbox);
+        let (status_tx, mut status_rx) = watch::channel(PeerStatus::default());
+        peer = peer.with_outbox(rx).with_status(status_tx);
+        app.status.send_modify(|live| {
+            live.linked = true;
+            live.peer_name = peer_name.clone();
+            live.peer_desktop = Some(peer_desktop);
+            live.focus_here = true;
+            live.rtt_ms = None;
+        });
+        (app.wake)();
+        let forward = app.clone();
+        tokio::spawn(async move {
+            while status_rx.changed().await.is_ok() {
+                let now = *status_rx.borrow();
+                forward.status.send_modify(|live| {
+                    live.focus_here = now.focus_here;
+                    live.rtt_ms = now.rtt_ms;
+                });
+                (forward.wake)();
+            }
+        });
+    }
     println!("mdp run: link up; driving");
-    Err(format!("link lost: {}", peer.drive().await))
+    let ended = peer.drive().await;
+    if let Some(app) = app {
+        app.session.lock().expect("session lock").take();
+        app.status.send_modify(|live| live.linked = false);
+        (app.wake)();
+    }
+    match ended {
+        // The peer saved a new Arrangement: adopt its mirror, reconnect now.
+        PeerError::ArrangementChanged(Some((side, offset))) => {
+            let (side, offset) = mirror_wire(side, offset);
+            let mut locked = shared.lock().expect("config lock");
+            locked.arrangement = ConfigArrangement {
+                side: config_side_from_wire(side),
+                offset,
+            };
+            locked
+                .save(config_path)
+                .map_err(|err| format!("save config: {err}"))?;
+            if let Some(app) = app {
+                app.status.send_modify(|live| live.arrangement_rev += 1);
+                (app.wake)();
+            }
+            Ok(())
+        }
+        // We saved one (already on disk), or the app closed the session.
+        PeerError::ArrangementChanged(None) | PeerError::Closed => Ok(()),
+        err => Err(format!("link lost: {err}")),
+    }
 }
 
 /// `mdp run`: real headless peer on the native platform. Loops forever,
@@ -272,14 +391,55 @@ fn run_blocking() -> Result<(), String> {
     let path: PathBuf = Config::default_path().map_err(|err| format!("config path: {err}"))?;
     let config = Config::load_or_create(&path).map_err(|err| format!("config: {err}"))?;
     println!("mdp run: config {}", path.display());
+    serve(Arc::new(Mutex::new(config)), path, None)
+}
+
+/// `mdp pair`: forget the pinned peer, then run (the CLI prompt pairs).
+pub fn pair() -> ExitCode {
+    let result = (|| {
+        let path = Config::default_path().map_err(|err| format!("config path: {err}"))?;
+        let mut config = Config::load_or_create(&path).map_err(|err| format!("config: {err}"))?;
+        // A running app holds the port and its own copy of the config; it
+        // would write the old pin back. Refuse before touching the file.
+        std::net::TcpListener::bind(("0.0.0.0", config.port)).map_err(|_| {
+            "mdp is already running here; use its tray menu: Pair a new device…".to_string()
+        })?;
+        config.clear_pinned_peer();
+        config
+            .save(&path)
+            .map_err(|err| format!("save config: {err}"))?;
+        println!("mdp pair: forgot the old peer; waiting for the new one");
+        serve(Arc::new(Mutex::new(config)), path, None)
+    })();
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("mdp pair: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Run the peer loop on a fresh single-thread runtime until a fatal error.
+/// The app calls this from a background thread with its hooks.
+pub fn serve(
+    config: Arc<Mutex<Config>>,
+    path: PathBuf,
+    app: Option<AppHooks>,
+) -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|err| format!("runtime: {err}"))?;
-    runtime.block_on(run_async(config, path))
+    runtime.block_on(run_async(config, path, app))
 }
 
-async fn run_async(mut config: Config, path: PathBuf) -> Result<(), String> {
+async fn run_async(
+    shared: Arc<Mutex<Config>>,
+    path: PathBuf,
+    app: Option<AppHooks>,
+) -> Result<(), String> {
+    let config = shared.lock().expect("config lock").clone();
     let keypair = config
         .static_keypair()
         .map_err(|err| format!("keypair: {err}"))?;
@@ -322,12 +482,13 @@ async fn run_async(mut config: Config, path: PathBuf) -> Result<(), String> {
     let mut backoff = INITIAL_BACKOFF;
     loop {
         match round(
-            &mut config,
+            &shared,
             &path,
             &keypair,
             &desktop,
             &listener,
             discovery.as_ref(),
+            app.as_ref(),
         )
         .await
         {
