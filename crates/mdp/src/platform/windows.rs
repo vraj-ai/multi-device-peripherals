@@ -265,6 +265,14 @@ fn enumerate_monitors() -> Option<Vec<(f64, f64, f64, f64)>> {
     }
 }
 
+/// What a hook does with one event: `(capture, swallow)`. Physical input is
+/// always captured, even while suppressed: Focus is remote then, and the
+/// captured events are what the Source forwards (and where the escape chord
+/// is seen). Injected input is never captured and never swallowed.
+fn hook_decision(injected: bool, suppressed: bool) -> (bool, bool) {
+    (!injected, suppressed && !injected)
+}
+
 unsafe extern "system" fn keyboard_hook_proc(
     ncode: i32,
     wparam: WPARAM,
@@ -273,18 +281,20 @@ unsafe extern "system" fn keyboard_hook_proc(
     if ncode >= 0 {
         let sink = HOOK_SINK.lock().ok().and_then(|guard| guard.clone());
         if let Some(sink) = sink {
-            if sink.suppressed.load(Ordering::SeqCst) {
-                return LRESULT(1);
-            }
             let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
             let injected = info.flags & LLKHF_INJECTED != KBDLLHOOKSTRUCT_FLAGS(0);
-            if !injected {
+            let (capture, swallow) =
+                hook_decision(injected, sink.suppressed.load(Ordering::SeqCst));
+            if capture {
                 let extended = info.flags & LLKHF_EXTENDED != KBDLLHOOKSTRUCT_FLAGS(0);
                 if let Some(event) =
                     translate_keyboard(wparam.0 as u32, info.scanCode as u16, extended)
                 {
                     let _ = sink.tx.send(event);
                 }
+            }
+            if swallow {
+                return LRESULT(1);
             }
         }
     }
@@ -295,16 +305,19 @@ unsafe extern "system" fn mouse_hook_proc(ncode: i32, wparam: WPARAM, lparam: LP
     if ncode >= 0 {
         let sink = HOOK_SINK.lock().ok().and_then(|guard| guard.clone());
         if let Some(sink) = sink {
-            if sink.suppressed.load(Ordering::SeqCst) {
-                return LRESULT(1);
-            }
             let info = &*(lparam.0 as *const MSLLHOOKSTRUCT);
-            if info.flags & LLMHF_INJECTED == 0 {
+            let injected = info.flags & LLMHF_INJECTED != 0;
+            let (capture, swallow) =
+                hook_decision(injected, sink.suppressed.load(Ordering::SeqCst));
+            if capture {
                 if let Some(event) =
                     translate_mouse(wparam.0 as u32, info.mouseData, info.pt.x, info.pt.y)
                 {
                     let _ = sink.tx.send(event);
                 }
+            }
+            if swallow {
+                return LRESULT(1);
             }
         }
     }
@@ -585,6 +598,14 @@ unsafe fn send_one(input: &INPUT, what: &str) -> Result<(), PlatformError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suppressed_physical_input_is_still_captured() {
+        assert_eq!(hook_decision(false, false), (true, false));
+        assert_eq!(hook_decision(false, true), (true, true));
+        assert_eq!(hook_decision(true, false), (false, false));
+        assert_eq!(hook_decision(true, true), (false, false));
+    }
     use windows::Win32::UI::WindowsAndMessaging::{
         WM_KEYUP, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
     };
