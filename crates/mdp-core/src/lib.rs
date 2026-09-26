@@ -6,7 +6,9 @@
 //! [`platform::Platform`]; the `windows` and `macos` implementations live in
 //! the `mdp` crate, selected by `cfg(target_os)`.
 
+pub mod link;
 pub mod platform;
+pub mod proto;
 
 pub use platform::{
     Desktop, FakePlatform, InputEvent, MouseButton, PermissionStatus, Platform, PlatformError,
