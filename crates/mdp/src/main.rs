@@ -3,9 +3,9 @@
 mod config;
 mod discovery;
 mod platform;
+mod selftest;
 mod ui;
 
-use mdp_core::{Desktop, FakePlatform, InputEvent, Platform};
 use std::process::ExitCode;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -35,34 +35,44 @@ fn run_stub(command: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn selftest() -> ExitCode {
-    let mut platform = FakePlatform::new(Desktop::new(0.0, 0.0, 1920.0, 1080.0));
-    let capture = match platform.start_capture() {
-        Ok(capture) => capture,
-        Err(err) => {
-            eprintln!("selftest: capture failed: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let probe = InputEvent::MouseMove { x: 1.0, y: 1.0 };
-    if let Err(err) = platform.feed_physical_event(probe.clone()) {
-        eprintln!("selftest: feed failed: {err}");
-        return ExitCode::FAILURE;
-    }
-    match capture.recv_timeout(std::time::Duration::from_secs(1)) {
-        Ok(seen) if seen == probe => {
-            println!("selftest: capture loopback ok");
+fn finish_selftest(result: Result<selftest::SelftestReport, String>) -> ExitCode {
+    match result {
+        Ok(report) => {
+            let bounds = report.desktop;
+            println!(
+                "selftest: Desktop x={} y={} w={} h={} ok ({:?})",
+                bounds.x, bounds.y, bounds.width, bounds.height, report.elapsed
+            );
             ExitCode::SUCCESS
         }
-        Ok(seen) => {
-            eprintln!("selftest: unexpected event: {seen:?}");
-            ExitCode::FAILURE
-        }
         Err(err) => {
-            eprintln!("selftest: no event observed: {err}");
+            eprintln!("selftest: {err}");
             ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn selftest_platform() -> ExitCode {
+    let mut platform = platform::Native::new();
+    finish_selftest(selftest::run_selftest(&mut platform, selftest_home()))
+}
+
+#[cfg(target_os = "windows")]
+fn selftest_home() -> (f64, f64) {
+    platform::windows::WindowsPlatform::cursor_position()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn selftest_home() -> (f64, f64) {
+    // Only Windows exposes a cursor getter so far; the neutral core still
+    // runs everywhere, and other OSes get a true home once they add one.
+    (0.0, 0.0)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn selftest_platform() -> ExitCode {
+    run_stub("selftest")
 }
 
 fn main() -> ExitCode {
@@ -83,7 +93,7 @@ fn main() -> ExitCode {
             }
         },
         Some(command @ ("run" | "pair")) => run_stub(command),
-        Some("selftest") => selftest(),
+        Some("selftest") => selftest_platform(),
         Some(flag) if flag.starts_with('-') => {
             eprintln!("error: unexpected flag '{flag}'\n");
             eprint!("{}", help_text());
