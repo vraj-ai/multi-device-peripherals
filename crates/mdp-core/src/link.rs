@@ -175,8 +175,9 @@ fn check_wire_len(len: u32) -> Result<usize, LinkError> {
 
 /// The encrypted Link to one paired Peer: exactly one TCP connection.
 pub struct Link {
-    /// Encrypted bytes not yet written. `send_frame` is polled inside
-    /// `select`, so a cancelled write must not leave half a frame behind.
+    /// Committed frames not yet written ([`Self::queue_frame`]), drained by
+    /// the cancel-safe [`Self::flush`]: a dropped write never leaves half a
+    /// frame behind, and a frame once queued always goes out, in order.
     write_buf: VecDeque<u8>,
     stream: TcpStream,
     transport: snow::TransportState,
@@ -244,21 +245,30 @@ impl Link {
     /// Encrypt and send one frame. Nothing leaves unencrypted: the Noise
     /// handshake that precedes this carries no frames at all.
     ///
-    /// Safe to cancel (a full socket under `select`). Encrypting spends a
-    /// Noise nonce, so a frame dropped after that is committed: its unsent
-    /// bytes stay buffered and go out first on the next call. Dropped before
-    /// that (still finishing an earlier frame), this frame was never sent.
+    /// Safe to cancel (a full socket under `select`). Once the frame is
+    /// queued it is committed: its unsent bytes stay buffered and go out
+    /// first on the next flush. Dropped before that (still flushing earlier
+    /// frames), this frame was never sent.
     pub async fn send_frame(&mut self, frame: &Frame) -> Result<(), LinkError> {
+        // Finish earlier frames before spending a nonce on this one, so a
+        // stalled peer cannot grow the buffer one frame per call.
+        self.flush().await?;
+        self.queue_frame(frame)?;
+        self.flush().await
+    }
+
+    /// Encrypt one frame into the outgoing buffer without waiting. From here
+    /// it is committed and goes out, in order, on the next [`Self::flush`].
+    /// Lets a caller commit several frames and its local effects as one
+    /// unit, with no await (and so no cancellation point) in between.
+    pub(crate) fn queue_frame(&mut self, frame: &Frame) -> Result<(), LinkError> {
         let body = encode_frame(frame)?;
-        // Finish an earlier cancelled frame before spending a nonce on this
-        // one, so at most one committed frame is ever buffered.
-        self.flush_write_buf().await?;
         // Length prefix and ciphertext in one buffer: split writes let Nagle
         // hold the body back a delayed-ACK interval behind its prefix.
         let cipher = seal(&mut self.transport, &body)?;
         self.write_buf.extend((cipher.len() as u32).to_be_bytes());
         self.write_buf.extend(&cipher);
-        self.flush_write_buf().await
+        Ok(())
     }
 
     /// Write out [`Self::write_buf`], reading into [`Self::read_buf`] while
@@ -266,7 +276,7 @@ impl Link {
     /// Peers both blocked writing, neither reading, would wait forever.
     /// Cancel-safe: each branch either moves bytes between socket and
     /// buffer or does nothing.
-    async fn flush_write_buf(&mut self) -> Result<(), LinkError> {
+    pub(crate) async fn flush(&mut self) -> Result<(), LinkError> {
         let (mut reader, mut writer) = self.stream.split();
         while !self.write_buf.is_empty() {
             let mut tmp = [0u8; 8192];
@@ -709,6 +719,41 @@ mod tests {
             .await
             .expect("write cipher");
         assert!(matches!(sink.recv_frame().await, Err(LinkError::Noise(_))));
+    }
+
+    #[tokio::test]
+    async fn queued_frames_survive_a_cancelled_flush_in_order() {
+        // More than the socket buffers hold, committed at once (one engine
+        // output, or several); the flush is dropped part way, then resumed.
+        let (mut source, mut sink) = paired().await;
+        let frames: Vec<Frame> = (0..200)
+            .map(|n| Frame::Clipboard {
+                text: format!("{n:03}{}", "q".repeat(60_000)),
+            })
+            .collect();
+        for frame in &frames {
+            source.queue_frame(frame).expect("queue");
+        }
+        let cancelled = tokio::time::timeout(std::time::Duration::from_millis(50), source.flush())
+            .await
+            .is_err();
+        assert!(
+            cancelled && !source.write_buf.is_empty(),
+            "flush never blocked"
+        );
+        let read_all = async {
+            let mut got = Vec::new();
+            for _ in 0..frames.len() {
+                got.push(sink.recv_frame().await.expect("recv"));
+            }
+            got
+        };
+        let both = async { tokio::join!(source.flush(), read_all) };
+        let (flushed, got) = tokio::time::timeout(std::time::Duration::from_secs(30), both)
+            .await
+            .expect("resumed flush stuck");
+        flushed.expect("flush");
+        assert_eq!(got, frames);
     }
 
     #[tokio::test]
