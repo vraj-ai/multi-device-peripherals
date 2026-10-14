@@ -72,7 +72,9 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
 - **No plaintext input on the wire:** no input or clipboard frame is sent
   before the Noise handshake completes with a pinned peer.
 - **Crossing latency:** local-LAN cursor motion added latency p95 < 10 ms,
-  measured by the `latency` loopback bench.
+  measured (as a loopback proxy) by the ignored e2e test
+  `mouse_move_loopback_latency_p95_under_10ms` in `crates/mdp/tests/e2e.rs`
+  (`cargo test -p mdp --test e2e -- --ignored`).
 - **Hooks capture while suppressed:** physical input is always captured,
   even when swallowed; injected input is never captured nor swallowed
   (`hook_decision` test on Windows, tap logic on macOS).
