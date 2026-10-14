@@ -35,7 +35,7 @@ Which Peer currently receives keyboard and mouse input. It follows the cursor.
 _Avoid_: active machine
 
 **Pairing**:
-The one-time confirmation of a 6-digit code that pins each Peer's static key.
+The confirmation of a 6-digit code, once per peer, that pins each Peer's static key.
 _Avoid_: login, handshake (the Noise handshake happens on every connect)
 
 **Link**:
@@ -46,4 +46,13 @@ _Avoid_: socket
 **Session**:
 One connect-to-disconnect run of the Link: handshake, Hello, then input until
 the Link drops, an Arrangement changes, or the app ends it.
-_Avoid_: connection, round
+_Avoid_: connection
+
+**Clipboard sync**:
+UTF-8 text only, synced on change, capped at 1 MiB, echo-guarded per Session.
+_Avoid_: file sync, rich clipboard
+
+**Escape hatch**:
+The hard-coded chord Ctrl+Alt+Shift+Esc on the Source, which returns the cursor
+and keyboard locally at once.
+_Avoid_: hotkey, shortcut
