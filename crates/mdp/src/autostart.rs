@@ -2,6 +2,7 @@
 //! macOS. Both launch `mdp ui`.
 
 use std::io;
+#[cfg(any(windows, target_os = "macos"))]
 use std::path::Path;
 
 /// Turn start-at-login on or off for the running executable.

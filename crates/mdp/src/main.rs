@@ -5,6 +5,7 @@ mod config;
 mod discovery;
 mod platform;
 mod run;
+#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
 mod selftest;
 mod ui;
 
@@ -32,6 +33,7 @@ fn version_text() -> String {
     format!("mdp {VERSION}\n")
 }
 
+#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
 fn finish_selftest(result: Result<selftest::SelftestReport, String>) -> ExitCode {
     match result {
         Ok(report) => {
@@ -61,6 +63,7 @@ fn selftest_home() -> (f64, f64) {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn selftest_home() -> (f64, f64) {
     // Only Windows exposes a cursor getter so far; the neutral core still
     // runs everywhere, and other OSes get a true home once they add one.
@@ -70,6 +73,13 @@ fn selftest_home() -> (f64, f64) {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn selftest_platform() -> ExitCode {
     run_stub("selftest")
+}
+
+/// Native capture and injection exist only on a real Peer (Windows or macOS).
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn run_stub(command: &str) -> ExitCode {
+    eprintln!("mdp {command}: native input hooks exist only on Windows and macOS");
+    ExitCode::FAILURE
 }
 
 fn run_ui() -> ExitCode {

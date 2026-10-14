@@ -169,6 +169,9 @@ pub struct Link {
     stream: TcpStream,
     transport: snow::TransportState,
     peer_key: PeerKey,
+    /// Bytes already taken from the socket. `recv_frame` is polled inside
+    /// `select`, so a cancelled read must not drop a length prefix on the floor.
+    read_buf: Vec<u8>,
 }
 
 impl Link {
@@ -239,13 +242,40 @@ impl Link {
     }
 
     /// Receive and decrypt one frame.
+    ///
+    /// Safe to cancel (a `select` branch losing to local input, or a test
+    /// timeout). Bytes already read stay in [`Self::read_buf`]; the Noise
+    /// nonce advances only once a whole ciphertext is in hand.
     pub async fn recv_frame(&mut self) -> Result<Frame, LinkError> {
-        let len = check_wire_len(self.stream.read_u32().await?)?;
-        let mut cipher = vec![0u8; len];
-        self.stream.read_exact(&mut cipher).await?;
-        let mut body = vec![0u8; len];
-        let len = self.transport.read_message(&cipher, &mut body)?;
-        Ok(decode_frame(&body[..len])?)
+        loop {
+            if let Some(frame) = self.decode_buffered()? {
+                return Ok(frame);
+            }
+            let mut tmp = [0u8; 8192];
+            let n = self.stream.read(&mut tmp).await?;
+            if n == 0 {
+                return Err(LinkError::Closed);
+            }
+            self.read_buf.extend_from_slice(&tmp[..n]);
+        }
+    }
+
+    /// Pop one frame from [`Self::read_buf`], or `Ok(None)` when it holds only
+    /// a prefix. Decrypts only after the length and ciphertext are both buffered.
+    fn decode_buffered(&mut self) -> Result<Option<Frame>, LinkError> {
+        if self.read_buf.len() < 4 {
+            return Ok(None);
+        }
+        let len_bytes: [u8; 4] = self.read_buf[..4].try_into().expect("4 bytes");
+        let wire_len = check_wire_len(u32::from_be_bytes(len_bytes))?;
+        if self.read_buf.len() < 4 + wire_len {
+            return Ok(None);
+        }
+        let cipher = self.read_buf[4..4 + wire_len].to_vec();
+        self.read_buf.drain(..4 + wire_len);
+        let mut body = vec![0u8; wire_len];
+        let n = self.transport.read_message(&cipher, &mut body)?;
+        Ok(Some(decode_frame(&body[..n])?))
     }
 }
 
@@ -292,6 +322,7 @@ where
             stream,
             transport,
             peer_key,
+            read_buf: Vec::new(),
         },
         peer_key,
     ))
