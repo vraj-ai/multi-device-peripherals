@@ -1,10 +1,10 @@
 //! Wire [`Frame`]s: the `postcard` enum every [`Link`](crate::link::Link) carries.
 //!
 //! Each frame is encoded with `postcard`, encrypted with Noise, and sent over
-//! TCP as a big-endian `u32` length + payload. Encoded bodies over 1 MiB are
-//! rejected, so the largest accepted wire frame is 1 MiB + header.
+//! TCP as a big-endian `u32` length + payload. Encoded bodies over
+//! [`MAX_FRAME_BYTES`] (a full 1 MiB clipboard plus framing) are rejected.
 
-use crate::platform::{Desktop, MouseButton};
+use crate::platform::{Desktop, MouseButton, CLIPBOARD_MAX_BYTES};
 use serde::{Deserialize, Serialize};
 
 /// Protocol version sent in [`Frame::Hello`].
@@ -13,10 +13,10 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// Bytes of the `u32` length prefix on the wire.
 pub const FRAME_HEADER_LEN: usize = 4;
 
-/// Largest accepted encoded frame body in bytes (1 MiB, matching the
-/// clipboard cap). With the length header, the largest wire frame is
-/// 1 MiB + header.
-pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+/// Largest accepted encoded frame body in bytes: a full clipboard
+/// ([`CLIPBOARD_MAX_BYTES`], 1 MiB) plus its postcard variant tag and
+/// length varint, so text at the cap still encodes.
+pub const MAX_FRAME_BYTES: usize = CLIPBOARD_MAX_BYTES + 16;
 
 /// Which side of this Peer's Desktop the other Peer's Desktop sits on.
 /// Appended variants keep the existing postcard indices stable.
@@ -110,7 +110,9 @@ impl std::fmt::Display for CodecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Postcard(err) => write!(f, "frame codec failed: {err}"),
-            Self::FrameTooLarge(len) => write!(f, "frame over 1 MiB + header: {len} bytes"),
+            Self::FrameTooLarge(len) => {
+                write!(f, "frame over {MAX_FRAME_BYTES} bytes: {len} bytes")
+            }
         }
     }
 }
@@ -130,7 +132,7 @@ impl From<postcard::Error> for CodecError {
     }
 }
 
-/// Encode one frame; rejects bodies over 1 MiB ([`MAX_FRAME_BYTES`]).
+/// Encode one frame; rejects bodies over [`MAX_FRAME_BYTES`].
 pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CodecError> {
     let body = postcard::to_allocvec(frame)?;
     if body.len() > MAX_FRAME_BYTES {
@@ -139,7 +141,7 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CodecError> {
     Ok(body)
 }
 
-/// Decode one frame body; rejects inputs over 1 MiB before parsing.
+/// Decode one frame body; rejects inputs over [`MAX_FRAME_BYTES`] before parsing.
 pub fn decode_frame(body: &[u8]) -> Result<Frame, CodecError> {
     if body.len() > MAX_FRAME_BYTES {
         return Err(CodecError::FrameTooLarge(body.len()));
@@ -193,6 +195,15 @@ mod tests {
             Frame::Ping { t: 7 },
             Frame::Pong { t: 7 },
         ]
+    }
+
+    #[test]
+    fn clipboard_at_the_cap_encodes_and_round_trips() {
+        let frame = Frame::Clipboard {
+            text: "x".repeat(CLIPBOARD_MAX_BYTES),
+        };
+        let body = encode_frame(&frame).expect("text at the cap must encode");
+        assert_eq!(decode_frame(&body).expect("decode"), frame);
     }
 
     #[test]
