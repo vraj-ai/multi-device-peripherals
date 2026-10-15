@@ -8,7 +8,7 @@ monitor. The keyboard follows the cursor. There's nothing to re-pair and no dong
   the Source automatically.
 - **Keys feel native on each OS.** They travel as physical keys, so on the Mac the Windows key
   acts as ⌘ and your Mac keyboard layout applies, exactly as if you'd plugged the keyboard in there.
-- **Encrypted and paired.** Everything travels over a Noise-encrypted link. The first
+- **Encrypted and paired.** Input and clipboard travel over a Noise-encrypted link. The first
   connection shows a 6-digit code on both screens, and after you confirm it no other device can connect.
 - **Clipboard text syncs** both ways.
 - **Always an escape hatch.** Press **Ctrl + Alt + Shift + Esc** on the machine with the
@@ -30,7 +30,7 @@ On the Mac, the download is unsigned, so clear the quarantine flag once and make
 ```sh
 xattr -d com.apple.quarantine ~/Downloads/mdp-macos-universal
 chmod +x ~/Downloads/mdp-macos-universal
-mv ~/Downloads/mdp-macos-universal /usr/local/bin/mdp
+sudo mkdir -p /usr/local/bin && sudo mv ~/Downloads/mdp-macos-universal /usr/local/bin/mdp
 ```
 
 Or build from source (Rust stable): `cargo build --release -p mdp`.
@@ -72,13 +72,13 @@ The file holds this machine's private pairing key, so keep it private.
 | Share mouse & keyboard | Pause or resume crossing |
 | Sync clipboard text | Pause or resume clipboard sync |
 | Arrange displays… | Open the Arrange window |
-| Pair a new device… / Unpair | Re-run pairing / forget the paired machine |
+| Pair a new device… / Unpair <name> | Forget the pinned peer; pairing runs again on the next connection. The Unpair label shows the pinned peer's name. |
 | Quit mdp | Stop |
 
-The icon shows the state: **dashed grey** means not linked, **left square amber** means focus is on
-this machine, and **right square amber** means focus is on the other machine.
+The icon shows the state: **dashed grey** means not linked, **left rectangle amber** means focus is on
+this machine, and **right rectangle amber** means focus is on the other machine.
 
-**Start at login** is a checkbox in the Arrange window. It adds a `Run` entry on Windows or a
+**Start at login** is a checkbox in the Arrange window. Saving adds a `Run` entry on Windows or a
 LaunchAgent on macOS.
 
 ## Troubleshooting
