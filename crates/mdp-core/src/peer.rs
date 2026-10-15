@@ -380,19 +380,30 @@ impl<P: Platform> Peer<P> {
 
     /// Process one local event or one Link frame, whichever comes first.
     /// Also runs the clipboard poll when it is due.
+    ///
+    /// Safe to cancel: the only awaits are the flushes and the select.
+    /// Handling an event is synchronous, so its frames are committed and
+    /// its platform actions applied together; a step dropped while flushing
+    /// leaves them buffered for the next step's first flush. While the peer
+    /// stalls, that flush holds back local input too (as a blocked send did).
     pub async fn drive_step(&mut self) -> Result<(), PeerError> {
-        self.poll_clipboard().await?;
+        // Flush before queueing so a stalled peer can't pile up clipboard
+        // frames, then flush again so a new clipboard frame goes out now.
+        self.link.flush().await?;
+        self.poll_clipboard()?;
+        self.link.flush().await?;
         tokio::select! {
             biased;
             event = self.inbox.recv() => {
                 if let Some(event) = event {
-                    self.note_local(event).await?;
+                    self.note_local(event)?;
                 }
             }
             frame = self.link.recv_frame() => {
-                self.note_remote(frame?).await?;
+                self.note_remote(frame?)?;
             }
         }
+        self.link.flush().await?;
         Ok(())
     }
 
@@ -439,7 +450,7 @@ impl<P: Platform> Peer<P> {
         cause
     }
 
-    async fn note_local(&mut self, event: InputEvent) -> Result<(), PeerError> {
+    fn note_local(&mut self, event: InputEvent) -> Result<(), PeerError> {
         let out = match event {
             InputEvent::MouseMove { x, y } => self.engine.note_local_cursor(x, y),
             InputEvent::Key { usage_id, pressed } => self.engine.note_local_key(usage_id, pressed),
@@ -448,13 +459,13 @@ impl<P: Platform> Peer<P> {
             }
             InputEvent::Scroll { dx, dy } => self.engine.note_local_wheel(dx, dy),
         };
-        self.emit(out).await
+        self.emit(out)
     }
 
     /// Poll the local clipboard when due; send changed text within the
     /// cap while sharing is on. Get failures (locked, empty, non-text)
     /// just wait for the next tick.
-    async fn poll_clipboard(&mut self) -> Result<(), PeerError> {
+    fn poll_clipboard(&mut self) -> Result<(), PeerError> {
         if !self.share_clipboard || self.last_poll.elapsed() < CLIPBOARD_POLL {
             return Ok(());
         }
@@ -470,20 +481,17 @@ impl<P: Platform> Peer<P> {
             }
             return Ok(());
         }
-        // Remember it before sending: `drive` can cancel this mid-send, and a
-        // committed frame is still delivered. Re-sending 1 MiB every poll on
-        // a slow Link would never finish.
-        self.last_clipboard = Some(current.clone());
-        self.link
-            .send_frame(&Frame::Clipboard { text: current })
-            .await?;
+        self.link.queue_frame(&Frame::Clipboard {
+            text: current.clone(),
+        })?;
+        self.last_clipboard = Some(current);
         Ok(())
     }
 
-    async fn note_remote(&mut self, frame: Frame) -> Result<(), PeerError> {
+    fn note_remote(&mut self, frame: Frame) -> Result<(), PeerError> {
         match frame {
             Frame::Ping { t } => {
-                self.link.send_frame(&Frame::Pong { t }).await?;
+                self.link.queue_frame(&Frame::Pong { t })?;
             }
             Frame::Pong { t } => {
                 self.last_rtt = Some(Duration::from_millis(now_millis().saturating_sub(t)));
@@ -508,16 +516,18 @@ impl<P: Platform> Peer<P> {
             other => {
                 if let Some(crossing) = from_wire(&other) {
                     let out = self.engine.receive(crossing);
-                    self.emit(out).await?;
+                    self.emit(out)?;
                 }
             }
         }
         Ok(())
     }
 
-    async fn emit(&mut self, out: EngineOutput) -> Result<(), PeerError> {
+    /// Carry out one engine output: queue its frames, apply its actions.
+    /// Synchronous on purpose, so no cancellation point can split it.
+    fn emit(&mut self, out: EngineOutput) -> Result<(), PeerError> {
         for frame in &out.frames {
-            self.link.send_frame(&to_wire(frame)).await?;
+            self.link.queue_frame(&to_wire(frame))?;
         }
         for action in &out.actions {
             self.apply(action)?;
@@ -690,5 +700,94 @@ mod tests {
             &None,
             &"x".repeat(CLIPBOARD_MAX_BYTES + 1)
         ));
+    }
+
+    #[tokio::test]
+    async fn crossing_completes_when_drive_step_is_cancelled_on_a_blocked_link() {
+        use crate::crossing::Arrangement;
+        use crate::link::StaticKeypair;
+        use crate::platform::FakePlatform;
+
+        let desktop = Desktop::new(0.0, 0.0, 1920.0, 1080.0);
+        let key_a = StaticKeypair::generate().expect("key A");
+        let key_b = StaticKeypair::generate().expect("key B");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let accept = async {
+            let (stream, _) = listener.accept().await.expect("accept");
+            Link::accept(stream, &key_b, &[], |_| true).await
+        };
+        let (dialed, accepted) = tokio::join!(Link::connect(addr, &key_a, &[], |_| true), accept);
+        let (link_a, _) = dialed.expect("connect");
+        let (mut link_b, _) = accepted.expect("accept");
+
+        let mut platform = FakePlatform::new(desktop);
+        let capture = platform.start_capture().expect("capture");
+        let engine = CrossingEngine::new(
+            desktop,
+            (desktop.width, desktop.height),
+            Arrangement::new(Side::Right),
+            key_a.public_key(),
+            key_b.public_key(),
+        );
+        let mut a = Peer::new(platform, link_a, capture, engine, desktop, false);
+
+        // B stops reading: fill A's socket until a send blocks.
+        let filler = Frame::Clipboard {
+            text: "f".repeat(60_000),
+        };
+        let mut filled = false;
+        for _ in 0..10_000 {
+            let send = a.link.send_frame(&filler);
+            if tokio::time::timeout(Duration::from_millis(20), send)
+                .await
+                .is_err()
+            {
+                filled = true;
+                break;
+            }
+        }
+        assert!(filled, "socket buffers never filled");
+
+        // Cross A out through the right edge while its sends are blocked;
+        // a select/timeout drops each drive_step part way.
+        for (x, y) in [(1919.0, 540.0), (1925.0, 540.0)] {
+            a.platform()
+                .feed_physical_event(InputEvent::MouseMove { x, y })
+                .expect("feed");
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        for _ in 0..4 {
+            let _ = tokio::time::timeout(Duration::from_millis(50), a.drive_step()).await;
+        }
+
+        // B reads again; A keeps stepping. Whatever the crossing owed must
+        // still happen: Enter on the wire, local input suppressed.
+        let reader = tokio::spawn(async move {
+            let mut frames = Vec::new();
+            while let Ok(Ok(frame)) =
+                tokio::time::timeout(Duration::from_millis(500), link_b.recv_frame()).await
+            {
+                frames.push(frame);
+            }
+            frames
+        });
+        for _ in 0..20 {
+            let _ = tokio::time::timeout(Duration::from_millis(50), a.drive_step()).await;
+        }
+        let frames = reader.await.expect("reader");
+        assert_eq!(a.focus(), Focus::Remote);
+        assert!(
+            frames
+                .iter()
+                .any(|frame| matches!(frame, Frame::Enter { .. })),
+            "Enter never reached the peer"
+        );
+        assert!(
+            a.platform().is_suppressed(),
+            "local input left unsuppressed while Focus is remote"
+        );
     }
 }
