@@ -15,7 +15,7 @@ There is no server to keep up. Build once, then start each drive as its own comm
 cargo build -p mdp
 ```
 
-Ready means `target/debug/mdp --version` prints `mdp ` plus the `version` in `crates/mdp/Cargo.toml` (today `mdp 0.1.0`). `target/debug/mdp.exe` is the Windows name.
+Ready means the debug binary's `--version` prints `mdp ` plus the `version` in `crates/mdp/Cargo.toml` (today `mdp 0.1.0`). Cargo writes it to `$CARGO_TARGET_DIR/debug/mdp` when that variable is set, otherwise `target/debug/mdp`. `mdp.exe` is the Windows name. The harness asks `cargo metadata` for the target directory, so a build that succeeds is the binary later steps run.
 
 Rust stable is pinned by `rust-toolchain.toml`, with rustfmt and clippy. On Windows and macOS that is enough. On Linux the product is not a Peer, but the suite still has to compile: install `pkg-config`, `libgtk-3-dev`, and `libxdo-dev` (and the libraries pkg-config then asks for, typically `libgdk-pixbuf-2.0-dev`, `libpango1.0-dev`, `libcairo2-dev`, `libatk1.0-dev`, `libxkbcommon-dev`). Missing GTK fails the build. A missing `libxdo` fails the link (`-lxdo`). Either failure is a failed run, not a two-machine gap.
 
@@ -37,7 +37,7 @@ It is read-only. Pass means all of the following:
 - `Cargo.toml` members are `crates/mdp-core` and `crates/mdp`.
 - The host OS is printed (`uname -s`).
 - TCP `24800` is reported free or in use. In use does not fail the doctor. It means a live peer is already here: do not start another one.
-- If `target/debug/mdp` (or `mdp.exe`) already exists, `--version` matches `crates/mdp/Cargo.toml`. A missing binary does not fail the doctor; build, then run doctor again before trusting CLI output.
+- If the debug binary already exists (`$CARGO_TARGET_DIR/debug/mdp` or `mdp.exe`, otherwise `target/debug/`), `--version` matches `crates/mdp/Cargo.toml`. A missing binary does not fail the doctor; build, then run doctor again before trusting CLI output.
 
 Fail the doctor when the toolchain or workspace check fails, or when an existing binary's version disagrees with the manifest. Do not drive a tree that fails the doctor.
 
@@ -52,6 +52,8 @@ The harness is the `verify-mdp` script plus the cargo tests it runs. Prefer the 
 .cursor/skills/verify-mdp/verify-mdp drive arrangement
 .cursor/skills/verify-mdp/verify-mdp drive selftest
 ```
+
+A drive passes only when each named test's own cargo line ends in `... ok`. A filter that matches nothing, or a test left `#[ignore]`, fails the drive even when `cargo test` exits 0.
 
 A full proof, which is what "done" requires, is:
 
@@ -128,7 +130,7 @@ A full run is a pass only when every required step is `PASS`. `GAP` is recorded 
 | `test` | yes | `cargo test --workspace` exits 0 | any non-ignored test fails, or the command errors |
 | `e2e` | yes | `cargo test -p mdp --test e2e` exits 0 and the log contains `cursor_crosses_right_and_back_with_remote_only_injection` with `ok` | the crossing test is missing or any e2e test fails |
 | `fake-platform` | yes | `cargo test -p mdp-core fake_platform` exits 0 and both `fake_platform_feeds_physical_and_records_injected` and `fake_platform_rejects_oversize_clipboard` are `ok` | either test fails |
-| `build` | yes | `cargo build -p mdp` exits 0 and the debug binary exists | build error or missing binary |
+| `build` | yes | `cargo build -p mdp` exits 0 and the debug binary exists under cargo's target directory | build error or missing binary |
 | `cli` | yes | `--help` exits 0 and lists `run`, `ui`, `pair`, and `selftest`; `--version` equals `mdp <manifest version>`; scratch home has no `config.toml` | any of those miss, or a config file appears |
 | `selftest` | attempt always | On Windows or macOS: exit 0 and stdout contains `selftest: Desktop` and ` ok`. On any other OS: `GAP` when exit is non-zero and stderr contains `native input hooks exist only on Windows and macOS` | exit 0 on a non-peer OS, a target-OS failure, or any other stderr |
 

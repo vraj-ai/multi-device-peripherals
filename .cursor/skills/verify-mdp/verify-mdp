@@ -34,11 +34,45 @@ manifest_version() {
   sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/crates/mdp/Cargo.toml" | head -n 1
 }
 
+# Cargo's debug output directory. Honors CARGO_TARGET_DIR (and .cargo/config
+# target-dir) via `cargo metadata`, then falls back to $CARGO_TARGET_DIR or
+# $ROOT/target. Cached on TARGET_DIR by begin_run.
+resolve_target_dir() {
+  local dir=""
+  if command -v cargo >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+    dir="$(
+      cd "$ROOT" && cargo metadata --format-version 1 --no-deps --offline 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("target_directory",""))' 2>/dev/null || true
+    )"
+    if [[ -z "$dir" ]]; then
+      dir="$(
+        cd "$ROOT" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("target_directory",""))' 2>/dev/null || true
+      )"
+    fi
+  fi
+  if [[ -z "$dir" && -n "${CARGO_TARGET_DIR:-}" ]]; then
+    case "$CARGO_TARGET_DIR" in
+      /*) dir="$CARGO_TARGET_DIR" ;;
+      *) dir="$ROOT/$CARGO_TARGET_DIR" ;;
+    esac
+  fi
+  if [[ -z "$dir" ]]; then
+    dir="$ROOT/target"
+  fi
+  TARGET_DIR="$dir"
+}
+
 mdp_bin() {
-  if [[ -x "$ROOT/target/debug/mdp" ]]; then
-    printf '%s\n' "$ROOT/target/debug/mdp"
-  elif [[ -x "$ROOT/target/debug/mdp.exe" ]]; then
-    printf '%s\n' "$ROOT/target/debug/mdp.exe"
+  local dir="${TARGET_DIR:-}"
+  if [[ -z "$dir" ]]; then
+    resolve_target_dir
+    dir="$TARGET_DIR"
+  fi
+  if [[ -x "$dir/debug/mdp" ]]; then
+    printf '%s\n' "$dir/debug/mdp"
+  elif [[ -x "$dir/debug/mdp.exe" ]]; then
+    printf '%s\n' "$dir/debug/mdp.exe"
   else
     return 1
   fi
@@ -61,6 +95,7 @@ begin_run() {
   : >"$RUN_DIR/summary.txt"
   mkdir -p "$EVIDENCE_ROOT"
   ln -sfn "$RUN_DIR" "$EVIDENCE_ROOT/latest"
+  resolve_target_dir
   FAILED=0
   {
     echo "verify-mdp run $run_id"
@@ -339,12 +374,31 @@ step_selftest() {
   fi
 }
 
+# cargo test exits 0 when the filter matches nothing and when the test is
+# #[ignore]. A drive passes only when the named test's own line ends in `ok`.
 require_ok() {
   local label="$1"
   shift
-  if run_logged "$label" "$@"; then
+  local filter="" prev="" arg
+  for arg in "$@"; do
+    if [[ "$arg" == "--" ]]; then
+      filter="$prev"
+      break
+    fi
+    prev="$arg"
+  done
+  if ! run_logged "$label" "$@"; then
+    return 1
+  fi
+  local logf="$RUN_DIR/${label}.log"
+  if [[ -z "$filter" ]]; then
+    echo "$label: no test filter before --" | tee -a "$TRANSCRIPT"
+    return 1
+  fi
+  if grep -F -- "$filter" "$logf" | grep -Eq '\.\.\. ok[[:space:]]*$'; then
     return 0
   fi
+  echo "$label: log is missing a passing $filter (zero matches and ignored tests fail the drive)" | tee -a "$TRANSCRIPT"
   return 1
 }
 
@@ -463,14 +517,29 @@ PY
   echo "EVIDENCE=$RUN_DIR" | tee -a "$TRANSCRIPT"
 }
 
+# Absolute path with symlinks resolved. python3, not GNU readlink -f: BSD
+# readlink on macOS rejects -f, and cleanup has to work on a Peer OS.
+resolve_path() {
+  local resolved
+  resolved="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1")" || return 1
+  [[ -n "$resolved" ]] || return 1
+  printf '%s\n' "$resolved"
+}
+
 cmd_cleanup() {
   local dir="${1:-$EVIDENCE_ROOT/latest}"
   local root_real dir_real
   if [[ ! -e "$dir" ]]; then
     die "no run directory at $dir"
   fi
-  root_real="$(readlink -f "$EVIDENCE_ROOT")"
-  dir_real="$(readlink -f "$dir")"
+  if ! command -v python3 >/dev/null 2>&1; then
+    die "python3 is required to resolve cleanup paths"
+  fi
+  root_real="$(resolve_path "$EVIDENCE_ROOT")" || die "could not resolve $EVIDENCE_ROOT"
+  dir_real="$(resolve_path "$dir")" || die "could not resolve $dir"
+  if [[ -z "$root_real" || -z "$dir_real" ]]; then
+    die "resolved cleanup path is empty"
+  fi
   case "$dir_real" in
     "$root_real" | "$root_real"/*) ;;
     *) die "refusing to clean $dir_real (outside $root_real)" ;;

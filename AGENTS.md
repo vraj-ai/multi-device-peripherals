@@ -10,12 +10,12 @@ Apply these yourself. The captain does not name a skill.
 - Every change: run verify-mdp (`.cursor/skills/verify-mdp/SKILL.md`) and read its transcript before the change counts as done.
 - Review: follow interrogate. Leave the verdict unapplied.
 - A risky refactor: follow blast-radius and prove the risk by running code before editing further.
-- Ship one ticket at a time. Tracker notes live in `docs/agents/issue-tracker.md`.
+- `ship` to ship one ticket at a time, `grill` when the goal is unclear, `issues` for tracker work, `snapshot` for unfinished work. Tracker notes live in `docs/agents/issue-tracker.md`.
 - End with a closeout snapshot: branch, HEAD sha, what landed, and the next action.
 
 ## Authority
 
-Self-merge is OFF (ADR 0003). Open the pull request against `main` and leave it for the captain to merge.
+Self-merge is off (fleet ADR 0003). Open the pull request against `main` and leave it for the captain to merge.
 
 ## Commands
 

@@ -8,6 +8,7 @@
 
 use crate::proto::{decode_frame, encode_frame, Frame, MAX_FRAME_BYTES};
 use sha2::{Digest, Sha256};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, ToSocketAddrs};
@@ -166,6 +167,9 @@ fn check_wire_len(len: u32) -> Result<usize, LinkError> {
 
 /// The encrypted Link to one paired Peer: exactly one TCP connection.
 pub struct Link {
+    /// Encrypted bytes not yet written. `send_frame` is polled inside
+    /// `select`, so a cancelled write must not leave half a frame behind.
+    write_buf: VecDeque<u8>,
     stream: TcpStream,
     transport: snow::TransportState,
     peer_key: PeerKey,
@@ -231,13 +235,24 @@ impl Link {
 
     /// Encrypt and send one frame. Nothing leaves unencrypted: the Noise
     /// handshake that precedes this carries no frames at all.
+    ///
+    /// Safe to cancel (a full socket under `select`). Encrypting spends a
+    /// Noise nonce, so a frame dropped after that is committed: its unsent
+    /// bytes stay buffered and go out first on the next call. Dropped before
+    /// that (still finishing an earlier frame), this frame was never sent.
     pub async fn send_frame(&mut self, frame: &Frame) -> Result<(), LinkError> {
         let body = encode_frame(frame)?;
-        let mut cipher = vec![0u8; body.len() + NOISE_TAG_LEN];
-        let len = self.transport.write_message(&body, &mut cipher)?;
-        self.stream.write_u32(len as u32).await?;
-        self.stream.write_all(&cipher[..len]).await?;
-        self.stream.flush().await?;
+        // Finish an earlier cancelled frame before spending a nonce on this
+        // one, so at most one committed frame is ever buffered.
+        self.stream.write_all_buf(&mut self.write_buf).await?;
+        // Length prefix and ciphertext in one buffer: split writes let Nagle
+        // hold the body back a delayed-ACK interval behind its prefix.
+        let mut wire = vec![0u8; 4 + body.len() + NOISE_TAG_LEN];
+        let len = self.transport.write_message(&body, &mut wire[4..])?;
+        wire[..4].copy_from_slice(&(len as u32).to_be_bytes());
+        self.write_buf.extend(&wire[..4 + len]);
+        // Cancel-safe: tokio advances the buffer past whatever was written.
+        self.stream.write_all_buf(&mut self.write_buf).await?;
         Ok(())
     }
 
@@ -288,6 +303,9 @@ async fn finish_handshake<F>(
 where
     F: Fn(&str) -> bool + Send,
 {
+    // Input frames are small and back to back; Nagle would hold each one
+    // behind the previous frame's ACK, far past the crossing latency budget.
+    stream.set_nodelay(true)?;
     let mut read_buf = vec![0u8; 65535];
     let mut msg_buf = vec![0u8; 65535];
     while !session.is_handshake_finished() {
@@ -319,6 +337,7 @@ where
     let transport = session.into_transport_mode()?;
     Ok((
         Link {
+            write_buf: VecDeque::new(),
             stream,
             transport,
             peer_key,
@@ -420,6 +439,104 @@ mod tests {
             source.recv_frame().await.expect("recv claim"),
             Frame::ClaimSource { seq: 1 }
         );
+    }
+
+    /// Two Links paired over loopback (dialer, acceptor).
+    async fn paired() -> (Link, Link) {
+        let key_a = StaticKeypair::generate().expect("key A");
+        let key_b = StaticKeypair::generate().expect("key B");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let accept_side = async {
+            let (stream, _) = listener.accept().await.expect("accept");
+            Link::accept(stream, &key_b, &[], |_| true).await
+        };
+        let (connect_res, accept_res) =
+            tokio::join!(Link::connect(addr, &key_a, &[], |_| true), accept_side);
+        let (source, _) = connect_res.expect("connect pairs");
+        let (sink, _) = accept_res.expect("accept pairs");
+        (source, sink)
+    }
+
+    #[tokio::test]
+    async fn send_frame_wire_is_be_length_then_ciphertext() {
+        // The on-wire format is shared with already-shipped peers: a u32
+        // big-endian length, then that many Noise ciphertext bytes.
+        let (mut source, mut sink) = paired().await;
+        source
+            .send_frame(&Frame::Ping { t: 7 })
+            .await
+            .expect("send ping");
+        let len = sink.stream.read_u32().await.expect("length") as usize;
+        let mut cipher = vec![0u8; len];
+        sink.stream
+            .read_exact(&mut cipher)
+            .await
+            .expect("ciphertext");
+        let mut body = vec![0u8; len];
+        let body_len = sink
+            .transport
+            .read_message(&cipher, &mut body)
+            .expect("decrypt");
+        assert_eq!(
+            decode_frame(&body[..body_len]).expect("decode"),
+            Frame::Ping { t: 7 }
+        );
+    }
+
+    #[tokio::test]
+    async fn send_frame_survives_cancellation_with_full_socket() {
+        // The peer is not reading, so the socket buffers fill and a send
+        // blocks partway; a select/timeout then drops it.
+        let (mut source, mut sink) = paired().await;
+        let big = |n: usize| Frame::Clipboard {
+            text: format!("{n:06}{}", "x".repeat(60_000)),
+        };
+        let mut sent = 0;
+        let mut cancelled = false;
+        while sent < 10_000 {
+            let frame = big(sent);
+            let send = source.send_frame(&frame);
+            let outcome = tokio::time::timeout(std::time::Duration::from_millis(20), send).await;
+            sent += 1;
+            match outcome {
+                Ok(result) => result.expect("send before the buffer fills"),
+                Err(_) => {
+                    cancelled = true;
+                    break;
+                }
+            }
+        }
+        assert!(cancelled, "socket buffers never filled");
+        assert!(
+            !source.write_buf.is_empty(),
+            "the cancel must land mid-frame for this test to mean anything"
+        );
+
+        // The cancelled frame was committed: it goes out ahead of the next
+        // one, and the peer reads every frame intact and in order.
+        let last = source.send_frame(&Frame::Ping { t: 9 });
+        let read_all = async {
+            for n in 0..sent {
+                assert_eq!(sink.recv_frame().await.expect("big frame"), big(n));
+            }
+            sink.recv_frame().await.expect("frame after cancelled send")
+        };
+        let both = async { tokio::join!(last, read_all) };
+        let (last, after) = tokio::time::timeout(std::time::Duration::from_secs(10), both)
+            .await
+            .expect("stream desynced: the peer is stuck mid-frame");
+        last.expect("send after cancelled send");
+        assert_eq!(after, Frame::Ping { t: 9 });
+    }
+
+    #[tokio::test]
+    async fn paired_links_disable_nagle() {
+        // Back-to-back input frames must not wait on each other's ACK; a
+        // loopback timing test cannot show this reliably, so check the option.
+        let (source, sink) = paired().await;
+        assert!(source.stream.nodelay().expect("dialer nodelay"));
+        assert!(sink.stream.nodelay().expect("acceptor nodelay"));
     }
 
     #[tokio::test]

@@ -103,6 +103,8 @@ fn mouse(x: f64, y: f64) -> InputEvent {
 /// Drive both peers until three consecutive quiet ticks (50 ms each).
 /// The capture bridge runs on a blocking thread; a shorter tick can declare
 /// quiet before that thread has forwarded a physical event.
+/// Nagle is off on the Link (`paired_links_disable_nagle`); this tick does
+/// not stand in for that check.
 /// Returns the first drive error seen (e.g. a dead Link).
 async fn settle<PA, PB>(a: &mut Peer<PA>, b: &mut Peer<PB>) -> Option<PeerError>
 where
