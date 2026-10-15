@@ -22,7 +22,7 @@ Preconditions:
 - `cargo build -p mdp` has produced the debug binary (a full `verify-mdp` run builds it before this step).
 - On Windows or macOS, expect the cursor to move slightly and an F24 key to be injected. Do not run it while the person is typing.
 
-- **Run it.** Run `.cursor/skills/verify-mdp/verify-mdp drive selftest`.
+- **Run it.** Run `.agents/skills/verify-mdp/verify-mdp drive selftest`.
 - **Windows or macOS.** Result `PASS`. Stdout contains `selftest: Desktop` and ` ok`, and the exit code is 0.
 - **Any other OS.** Result `GAP`. The exit code is non-zero and stderr contains `native input hooks exist only on Windows and macOS`. Exit 0 on that host is a failure.
 

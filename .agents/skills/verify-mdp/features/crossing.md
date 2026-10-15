@@ -28,7 +28,7 @@ Preconditions:
 - `verify-mdp doctor` passed.
 - No live `mdp` is using the user's config. This drive does not start one.
 
-- **Cross and type.** Push through the right edge and type. Run `.cursor/skills/verify-mdp/verify-mdp drive crossing`. Exit code 0. The log shows `cursor_crosses_right_and_back_with_remote_only_injection` as `ok`: Focus goes remote, the remote side records the key, the local side records no injection, then Focus returns local.
+- **Cross and type.** Push through the right edge and type. Run `.agents/skills/verify-mdp/verify-mdp drive crossing`. Exit code 0. The log shows `cursor_crosses_right_and_back_with_remote_only_injection` as `ok`: Focus goes remote, the remote side records the key, the local side records no injection, then Focus returns local.
 - **Link drop.** The same command's log shows `kill_link_while_remote_restores_focus_within_1s` as `ok` (local Focus restored inside 1 second) and `disconnect_while_remote_warps_back_and_unsuppresses` as `ok`.
 - **Other computer takes over.** The log shows `physical_input_on_sink_claims_source` as `ok` and `stuck_keys_released_on_crossing` as `ok`.
 - **Escape hatch.** The log shows `escape_chord_restores_local_focus` as `ok`.

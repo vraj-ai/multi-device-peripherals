@@ -7,7 +7,7 @@
 Apply these yourself. The captain does not name a skill.
 
 - Hard work, a change that crosses modules, or a bug whose cause is unknown: follow poteto-mode and let it pick the playbook.
-- Every change: run verify-mdp (`.cursor/skills/verify-mdp/SKILL.md`) and read its transcript before the change counts as done.
+- Every change: run verify-mdp (`.agents/skills/verify-mdp/SKILL.md`) and read its transcript before the change counts as done.
 - Review: follow interrogate. Leave the verdict unapplied.
 - A risky refactor: follow blast-radius and prove the risk by running code before editing further.
 - `ship` to ship one ticket at a time, `grill` when the goal is unclear, `issues` for tracker work, `snapshot` for unfinished work. Tracker notes live in `docs/agents/issue-tracker.md`.
@@ -19,7 +19,7 @@ Self-merge is off (fleet ADR 0003). Open the pull request against `main` and lea
 
 ## Commands
 
-- Verify: `.cursor/skills/verify-mdp/verify-mdp`
+- Verify: `.agents/skills/verify-mdp/verify-mdp`
 - Test: `cargo test --workspace`
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Format: `cargo fmt --all -- --check`

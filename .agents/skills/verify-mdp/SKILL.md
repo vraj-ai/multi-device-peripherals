@@ -28,7 +28,7 @@ Teardown is `verify-mdp cleanup`. It does not delete the evidence directory.
 Run this first, and again whenever a drive looks wrong:
 
 ```sh
-.cursor/skills/verify-mdp/verify-mdp doctor
+.agents/skills/verify-mdp/verify-mdp doctor
 ```
 
 It is read-only. Pass means all of the following:
@@ -46,11 +46,11 @@ Fail the doctor when the toolchain or workspace check fails, or when an existing
 The harness is the `verify-mdp` script plus the cargo tests it runs. Prefer the script over retyping filters. From the repo root:
 
 ```sh
-.cursor/skills/verify-mdp/verify-mdp drive crossing
-.cursor/skills/verify-mdp/verify-mdp drive pairing
-.cursor/skills/verify-mdp/verify-mdp drive clipboard
-.cursor/skills/verify-mdp/verify-mdp drive arrangement
-.cursor/skills/verify-mdp/verify-mdp drive selftest
+.agents/skills/verify-mdp/verify-mdp drive crossing
+.agents/skills/verify-mdp/verify-mdp drive pairing
+.agents/skills/verify-mdp/verify-mdp drive clipboard
+.agents/skills/verify-mdp/verify-mdp drive arrangement
+.agents/skills/verify-mdp/verify-mdp drive selftest
 ```
 
 A drive passes only when each named test's own cargo line ends in `... ok`. A filter that matches nothing, or a test left `#[ignore]`, fails the drive even when `cargo test` exits 0.
@@ -58,7 +58,7 @@ A drive passes only when each named test's own cargo line ends in `... ok`. A fi
 A full proof, which is what "done" requires, is:
 
 ```sh
-.cursor/skills/verify-mdp/verify-mdp
+.agents/skills/verify-mdp/verify-mdp
 ```
 
 That runs doctor, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the `e2e` integration test, the `fake_platform` unit tests, `cargo build -p mdp`, `mdp --help` and `mdp --version` inside a scratch home, and `mdp selftest`.
@@ -97,8 +97,8 @@ Proof standards:
 ## Cleanup
 
 ```sh
-.cursor/skills/verify-mdp/verify-mdp cleanup
-.cursor/skills/verify-mdp/verify-mdp cleanup /tmp/verify-mdp-evidence/<run-id>
+.agents/skills/verify-mdp/verify-mdp cleanup
+.agents/skills/verify-mdp/verify-mdp cleanup /tmp/verify-mdp-evidence/<run-id>
 ```
 
 Cleanup reads `pids` in the run directory and kills only those pids. It then deletes the run's `scratch/` directory (the fake home). It leaves `transcript.txt`, the step logs, `summary.txt`, and `summary.json` in place. Never `killall` by the name `mdp` or `cargo`. Never delete `/tmp/verify-mdp-evidence`.
@@ -107,7 +107,7 @@ Run cleanup after a failed drive too, so a scratch home or a recorded pid does n
 
 ## Helpers
 
-The only helper is the executable `.cursor/skills/verify-mdp/verify-mdp`. Invoke it from the repo root. `verify-mdp --help` lists the subcommands.
+The only helper is the executable `.agents/skills/verify-mdp/verify-mdp`. Invoke it from the repo root. `verify-mdp --help` lists the subcommands.
 
 | Command | What it does |
 |---|---|
