@@ -99,6 +99,9 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
 - Real end-to-end Mac<->Windows behaviour can only be proven by the human on
   both machines. Agents prove logic with unit tests, Windows behaviour locally,
   and macOS compile+unit via CI.
+- Linux is not a Peer. The binary still builds there so agents can run the
+  platform-free tests: `Native` returns `PlatformError::Unsupported`, and
+  `mdp selftest` exits non-zero.
 - The app runs as a normal user process. It is not a service, so it can't
   control the Windows secure desktop (UAC/lock screen).
 
@@ -107,5 +110,6 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
 - `AGENTS.md` is the always-loaded project router.
 - This file is human-owned and changes only when intent, decisions, invariants,
   non-goals, or accepted boundaries change.
-- `CONTEXT/progress.md` is a bounded derived pointer, not a resume source.
+- Status lives in git history, issues, and pull requests. Do not recreate
+  `CONTEXT/progress.md`.
 - `goals` owns goal backlogs, handoffs, progress updates, and review verdicts.

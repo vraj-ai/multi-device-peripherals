@@ -1,0 +1,634 @@
+#!/usr/bin/env bash
+# Proof harness for mdp. Read SKILL.md beside this file before changing it.
+# Evidence directories under /tmp/verify-mdp-evidence survive cleanup.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EVIDENCE_ROOT="/tmp/verify-mdp-evidence"
+export CARGO_TERM_COLOR=never
+
+usage() {
+  cat <<'EOF'
+verify-mdp — prove mdp from cargo tests, e2e.rs, the fake platform, and mdp selftest
+
+Usage:
+  verify-mdp                  Full proof (doctor, fmt, clippy, tests, e2e, fake platform, build, cli, selftest)
+  verify-mdp doctor           Read-only check: toolchain, workspace, port 24800, binary version if built
+  verify-mdp drive FEATURE    One feature: crossing, pairing, clipboard, arrangement, selftest
+  verify-mdp cleanup [DIR]    Kill pids this run recorded and delete its scratch home. Logs stay.
+  verify-mdp --help
+
+Exit 0 when every required step passes. GAP (selftest on a non-peer OS, ignored latency bench, two-machine items) does not fail the exit code. FAIL does.
+
+A full run prints EVIDENCE=/tmp/verify-mdp-evidence/<run-id> and writes transcript.txt, summary.txt, and summary.json there.
+EOF
+}
+
+die() {
+  printf 'verify-mdp: %s\n' "$*" >&2
+  exit 2
+}
+
+manifest_version() {
+  sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/crates/mdp/Cargo.toml" | head -n 1
+}
+
+# Cargo's debug output directory. Honors CARGO_TARGET_DIR (and .cargo/config
+# target-dir) via `cargo metadata`, then falls back to $CARGO_TARGET_DIR or
+# $ROOT/target. Cached on TARGET_DIR by begin_run.
+resolve_target_dir() {
+  local dir=""
+  if command -v cargo >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+    dir="$(
+      cd "$ROOT" && cargo metadata --format-version 1 --no-deps --offline 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("target_directory",""))' 2>/dev/null || true
+    )"
+    if [[ -z "$dir" ]]; then
+      dir="$(
+        cd "$ROOT" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("target_directory",""))' 2>/dev/null || true
+      )"
+    fi
+  fi
+  if [[ -z "$dir" && -n "${CARGO_TARGET_DIR:-}" ]]; then
+    case "$CARGO_TARGET_DIR" in
+      /*) dir="$CARGO_TARGET_DIR" ;;
+      *) dir="$ROOT/$CARGO_TARGET_DIR" ;;
+    esac
+  fi
+  if [[ -z "$dir" ]]; then
+    dir="$ROOT/target"
+  fi
+  TARGET_DIR="$dir"
+}
+
+mdp_bin() {
+  local dir="${TARGET_DIR:-}"
+  if [[ -z "$dir" ]]; then
+    resolve_target_dir
+    dir="$TARGET_DIR"
+  fi
+  if [[ -x "$dir/debug/mdp" ]]; then
+    printf '%s\n' "$dir/debug/mdp"
+  elif [[ -x "$dir/debug/mdp.exe" ]]; then
+    printf '%s\n' "$dir/debug/mdp.exe"
+  else
+    return 1
+  fi
+}
+
+peer_os() {
+  case "$(uname -s)" in
+    Darwin | MINGW* | MSYS* | CYGWIN* | Windows_NT) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+begin_run() {
+  local run_id
+  run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  RUN_DIR="$EVIDENCE_ROOT/$run_id"
+  TRANSCRIPT="$RUN_DIR/transcript.txt"
+  mkdir -p "$RUN_DIR/scratch/home" "$RUN_DIR/scratch/config" "$RUN_DIR/scratch/appdata"
+  : >"$RUN_DIR/pids"
+  : >"$RUN_DIR/summary.txt"
+  mkdir -p "$EVIDENCE_ROOT"
+  ln -sfn "$RUN_DIR" "$EVIDENCE_ROOT/latest"
+  resolve_target_dir
+  FAILED=0
+  {
+    echo "verify-mdp run $run_id"
+    echo "EVIDENCE=$RUN_DIR"
+    echo "root $ROOT"
+    echo "head $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "branch $(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    echo "os $(uname -s) $(uname -m)"
+    echo "date $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } | tee "$TRANSCRIPT"
+}
+
+note_result() {
+  local name="$1"
+  local result="$2"
+  printf 'RESULT %s %s\n' "$name" "$result" | tee -a "$TRANSCRIPT" "$RUN_DIR/summary.txt"
+  if [[ "$result" == "FAIL" ]]; then
+    FAILED=1
+  fi
+}
+
+run_logged() {
+  local name="$1"
+  shift
+  local logf="$RUN_DIR/${name}.log"
+  local code
+  {
+    echo "===== STEP $name ====="
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+  } | tee -a "$TRANSCRIPT"
+  set +e
+  (cd "$ROOT" && "$@") >"$logf" 2>&1
+  code=$?
+  set +e
+  cat "$logf" | tee -a "$TRANSCRIPT"
+  printf 'exit %s\n' "$code" | tee -a "$TRANSCRIPT"
+  return "$code"
+}
+
+step_doctor() {
+  local logf="$RUN_DIR/doctor.log"
+  local bin ver got ok
+  {
+    echo "===== STEP doctor ====="
+    if command -v cargo >/dev/null 2>&1; then
+      echo "cargo: $(command -v cargo)"
+      cargo --version
+    else
+      echo "cargo: MISSING"
+    fi
+    if command -v rustc >/dev/null 2>&1; then
+      echo "rustc: $(command -v rustc)"
+      rustc --version
+    else
+      echo "rustc: MISSING"
+    fi
+    echo "os: $(uname -s) $(uname -m)"
+    echo "workspace:"
+    grep -n 'members' "$ROOT/Cargo.toml" || true
+    if command -v ss >/dev/null 2>&1; then
+      if ss -ltn | awk '{print $4}' | grep -Eq '24800$'; then
+        echo "port 24800: in use (do not start a second mdp)"
+      else
+        echo "port 24800: free"
+      fi
+    else
+      echo "port 24800: ss not installed, not checked"
+    fi
+    if bin="$(mdp_bin)"; then
+      echo "binary: $bin"
+      "$bin" --version || true
+    else
+      echo "binary: not built"
+    fi
+  } >"$logf" 2>&1
+  cat "$logf" | tee -a "$TRANSCRIPT"
+  ok=1
+  command -v cargo >/dev/null 2>&1 || ok=0
+  command -v rustc >/dev/null 2>&1 || ok=0
+  grep -q 'crates/mdp-core' "$ROOT/Cargo.toml" || ok=0
+  grep -q 'crates/mdp"' "$ROOT/Cargo.toml" || ok=0
+  if bin="$(mdp_bin)"; then
+    ver="$(manifest_version)"
+    got="$("$bin" --version 2>/dev/null || true)"
+    if [[ "$got" != "mdp $ver" ]]; then
+      printf 'version mismatch: got %q want %q\n' "$got" "mdp $ver" | tee -a "$TRANSCRIPT"
+      ok=0
+    fi
+  fi
+  if [[ "$ok" -eq 1 ]]; then
+    note_result doctor PASS
+  else
+    note_result doctor FAIL
+  fi
+}
+
+step_fmt() {
+  if run_logged fmt cargo fmt --all -- --check; then
+    note_result fmt PASS
+  else
+    note_result fmt FAIL
+  fi
+}
+
+step_clippy() {
+  if run_logged clippy cargo clippy --workspace --all-targets -- -D warnings; then
+    note_result clippy PASS
+  else
+    note_result clippy FAIL
+  fi
+}
+
+step_test() {
+  if run_logged test cargo test --workspace; then
+    note_result test PASS
+  else
+    note_result test FAIL
+  fi
+}
+
+step_e2e() {
+  if run_logged e2e cargo test -p mdp --test e2e -- --nocapture; then
+    if grep -q 'cursor_crosses_right_and_back_with_remote_only_injection' "$RUN_DIR/e2e.log" \
+      && grep 'cursor_crosses_right_and_back_with_remote_only_injection' "$RUN_DIR/e2e.log" | grep -q 'ok'; then
+      note_result e2e PASS
+    else
+      echo "e2e log is missing a passing cursor_crosses_right_and_back_with_remote_only_injection" | tee -a "$TRANSCRIPT"
+      note_result e2e FAIL
+    fi
+  else
+    note_result e2e FAIL
+  fi
+}
+
+step_fake() {
+  if run_logged fake-platform cargo test -p mdp-core fake_platform -- --nocapture; then
+    local logf="$RUN_DIR/fake-platform.log"
+    if grep 'fake_platform_feeds_physical_and_records_injected' "$logf" | grep -q 'ok' \
+      && grep 'fake_platform_rejects_oversize_clipboard' "$logf" | grep -q 'ok'; then
+      note_result fake-platform PASS
+    else
+      echo "fake-platform log is missing a passing fake_platform test" | tee -a "$TRANSCRIPT"
+      note_result fake-platform FAIL
+    fi
+  else
+    note_result fake-platform FAIL
+  fi
+}
+
+step_build() {
+  if run_logged build cargo build -p mdp; then
+    if mdp_bin >/dev/null; then
+      note_result build PASS
+    else
+      echo "build exited 0 but the debug binary is missing" | tee -a "$TRANSCRIPT"
+      note_result build FAIL
+    fi
+  else
+    note_result build FAIL
+  fi
+}
+
+scratch_env() {
+  env \
+    HOME="$RUN_DIR/scratch/home" \
+    XDG_CONFIG_HOME="$RUN_DIR/scratch/config" \
+    APPDATA="$RUN_DIR/scratch/appdata" \
+    "$@"
+}
+
+config_written() {
+  find "$RUN_DIR/scratch" -name 'config.toml' -print | grep -q .
+}
+
+step_cli() {
+  local bin ver help_code ver_code ok
+  local logf="$RUN_DIR/cli.log"
+  if ! bin="$(mdp_bin)"; then
+    echo "binary missing; cli not run" | tee "$logf" | tee -a "$TRANSCRIPT"
+    note_result cli FAIL
+    return
+  fi
+  ver="$(manifest_version)"
+  {
+    echo "===== STEP cli ====="
+    printf '+ %q --help\n' "$bin"
+    printf '+ %q --version\n' "$bin"
+  } | tee -a "$TRANSCRIPT"
+  set +e
+  scratch_env "$bin" --help >"$RUN_DIR/cli-help.txt" 2>"$RUN_DIR/cli-help.err"
+  help_code=$?
+  scratch_env "$bin" --version >"$RUN_DIR/cli-version.txt" 2>"$RUN_DIR/cli-version.err"
+  ver_code=$?
+  set +e
+  {
+    echo "help exit $help_code"
+    cat "$RUN_DIR/cli-help.txt"
+    echo "help stderr:"
+    cat "$RUN_DIR/cli-help.err"
+    echo "version exit $ver_code"
+    cat "$RUN_DIR/cli-version.txt"
+    echo "version stderr:"
+    cat "$RUN_DIR/cli-version.err"
+    echo "config.toml under scratch:"
+    find "$RUN_DIR/scratch" -name 'config.toml' -print
+  } | tee "$logf" | tee -a "$TRANSCRIPT"
+  ok=1
+  [[ "$help_code" -eq 0 ]] || ok=0
+  [[ "$ver_code" -eq 0 ]] || ok=0
+  grep -q 'run' "$RUN_DIR/cli-help.txt" || ok=0
+  grep -q 'ui' "$RUN_DIR/cli-help.txt" || ok=0
+  grep -q 'pair' "$RUN_DIR/cli-help.txt" || ok=0
+  grep -q 'selftest' "$RUN_DIR/cli-help.txt" || ok=0
+  if [[ "$(tr -d '\r\n' <"$RUN_DIR/cli-version.txt")" != "mdp $ver" ]]; then
+    ok=0
+  fi
+  if config_written; then
+    echo "cli wrote a config.toml in the scratch home" | tee -a "$TRANSCRIPT"
+    ok=0
+  fi
+  if [[ "$ok" -eq 1 ]]; then
+    note_result cli PASS
+  else
+    note_result cli FAIL
+  fi
+}
+
+step_selftest() {
+  local bin code ok
+  local logf="$RUN_DIR/selftest.log"
+  if ! bin="$(mdp_bin)"; then
+    echo "binary missing; selftest not run" | tee "$logf" | tee -a "$TRANSCRIPT"
+    note_result selftest FAIL
+    return
+  fi
+  {
+    echo "===== STEP selftest ====="
+    printf '+ %q selftest\n' "$bin"
+  } | tee -a "$TRANSCRIPT"
+  set +e
+  scratch_env "$bin" selftest >"$RUN_DIR/selftest.out" 2>"$RUN_DIR/selftest.err"
+  code=$?
+  set +e
+  {
+    echo "selftest exit $code"
+    echo "stdout:"
+    cat "$RUN_DIR/selftest.out"
+    echo "stderr:"
+    cat "$RUN_DIR/selftest.err"
+    echo "config.toml under scratch:"
+    find "$RUN_DIR/scratch" -name 'config.toml' -print
+  } | tee "$logf" | tee -a "$TRANSCRIPT"
+  if config_written; then
+    echo "selftest wrote a config.toml in the scratch home" | tee -a "$TRANSCRIPT"
+    note_result selftest FAIL
+    return
+  fi
+  if peer_os; then
+    ok=1
+    [[ "$code" -eq 0 ]] || ok=0
+    grep -q 'selftest: Desktop' "$RUN_DIR/selftest.out" || ok=0
+    grep -q ' ok' "$RUN_DIR/selftest.out" || ok=0
+    if [[ "$ok" -eq 1 ]]; then
+      note_result selftest PASS
+    else
+      note_result selftest FAIL
+    fi
+  else
+    if [[ "$code" -ne 0 ]] && grep -q 'native input hooks exist only on Windows and macOS' "$RUN_DIR/selftest.err"; then
+      note_result selftest GAP
+    else
+      note_result selftest FAIL
+    fi
+  fi
+}
+
+# cargo test exits 0 when the filter matches nothing and when the test is
+# #[ignore]. A drive passes only when the named test's own line ends in `ok`.
+require_ok() {
+  local label="$1"
+  shift
+  local filter="" prev="" arg
+  for arg in "$@"; do
+    if [[ "$arg" == "--" ]]; then
+      filter="$prev"
+      break
+    fi
+    prev="$arg"
+  done
+  if ! run_logged "$label" "$@"; then
+    return 1
+  fi
+  local logf="$RUN_DIR/${label}.log"
+  if [[ -z "$filter" ]]; then
+    echo "$label: no test filter before --" | tee -a "$TRANSCRIPT"
+    return 1
+  fi
+  if grep -F -- "$filter" "$logf" | grep -Eq '\.\.\. ok[[:space:]]*$'; then
+    return 0
+  fi
+  echo "$label: log is missing a passing $filter (zero matches and ignored tests fail the drive)" | tee -a "$TRANSCRIPT"
+  return 1
+}
+
+drive_fail() {
+  local name="$1"
+  note_result "$name" FAIL
+}
+
+drive_crossing() {
+  local failed=0
+  require_ok crossing-cross cargo test -p mdp --test e2e cursor_crosses_right_and_back_with_remote_only_injection -- --nocapture || failed=1
+  require_ok crossing-kill cargo test -p mdp --test e2e kill_link_while_remote_restores_focus_within_1s -- --nocapture || failed=1
+  require_ok crossing-claim cargo test -p mdp --test e2e physical_input_on_sink_claims_source -- --nocapture || failed=1
+  require_ok crossing-stuck cargo test -p mdp-core stuck_keys_released_on_crossing -- --nocapture || failed=1
+  require_ok crossing-escape cargo test -p mdp-core escape_chord_restores_local_focus -- --nocapture || failed=1
+  require_ok crossing-disconnect cargo test -p mdp-core disconnect_while_remote_warps_back_and_unsuppresses -- --nocapture || failed=1
+  if [[ "$failed" -eq 0 ]]; then
+    note_result crossing PASS
+  else
+    drive_fail crossing
+  fi
+}
+
+drive_pairing() {
+  local failed=0
+  require_ok pairing-code cargo test -p mdp-core pairing_code_is_six_digits_and_stable -- --nocapture || failed=1
+  require_ok pairing-loop cargo test -p mdp-core loopback_pairing_exchanges_frames_both_ways -- --nocapture || failed=1
+  require_ok pairing-reject cargo test -p mdp-core rejecting_pairing_code_closes_without_frames -- --nocapture || failed=1
+  require_ok pairing-impostor cargo test -p mdp-core pinned_link_refuses_impostor_and_hides_plaintext -- --nocapture || failed=1
+  require_ok pairing-window cargo test -p mdp shows_code_in_two_groups_and_confirms -- --nocapture || failed=1
+  require_ok pairing-mismatch cargo test -p mdp mismatch_rejects -- --nocapture || failed=1
+  require_ok pairing-expiry cargo test -p mdp expiry_rejects -- --nocapture || failed=1
+  if [[ "$failed" -eq 0 ]]; then
+    note_result pairing PASS
+  else
+    drive_fail pairing
+  fi
+}
+
+drive_clipboard() {
+  local failed=0
+  require_ok clipboard-sync cargo test -p mdp --test e2e clipboard_text_syncs_without_echo -- --nocapture || failed=1
+  require_ok clipboard-existing cargo test -p mdp --test e2e connecting_does_not_push_what_was_already_copied -- --nocapture || failed=1
+  require_ok clipboard-off cargo test -p mdp --test e2e clipboard_toggle_off_sends_nothing -- --nocapture || failed=1
+  require_ok clipboard-oversize cargo test -p mdp --test e2e oversize_clipboard_is_not_sent -- --nocapture || failed=1
+  if [[ "$failed" -eq 0 ]]; then
+    note_result clipboard PASS
+  else
+    drive_fail clipboard
+  fi
+}
+
+drive_arrangement() {
+  local failed=0
+  require_ok arrangement-drag cargo test -p mdp drag_right_then_save_emits_right -- --nocapture || failed=1
+  require_ok arrangement-arrows cargo test -p mdp arrow_keys_revert_and_receive -- --nocapture || failed=1
+  require_ok arrangement-mirror cargo test -p mdp mirror_flips_side_and_offset -- --nocapture || failed=1
+  require_ok arrangement-top cargo test -p mdp --test e2e arrangement_top_crosses_with_mirrored_wire_frames -- --nocapture || failed=1
+  require_ok arrangement-save cargo test -p mdp --test e2e saved_arrangement_ends_both_sessions_with_the_senders_view -- --nocapture || failed=1
+  if [[ "$failed" -eq 0 ]]; then
+    note_result arrangement PASS
+  else
+    drive_fail arrangement
+  fi
+}
+
+write_gaps() {
+  {
+    echo "===== GAPS ====="
+    if peer_os; then
+      echo "- selftest: this host ($(uname -s)) is a peer OS. RESULT selftest above is the hook check."
+    else
+      echo "- selftest: host $(uname -s) has no native input hooks. A non-zero exit with the unsupported-host line is GAP, not a pass of the hooks."
+    fi
+    if [[ -f "$RUN_DIR/test.log" ]] && grep -q 'mouse_move_loopback_latency_p95_under_10ms' "$RUN_DIR/test.log"; then
+      echo "- latency: mouse_move_loopback_latency_p95_under_10ms stayed ignored. That bench is one host talking to itself, not local-LAN p95."
+    else
+      echo "- latency: the ignored loopback bench was not executed. It is not the local-LAN p95 budget."
+    fi
+    echo "- windows-only and macos-only tests (hook_decision, the event tap) compile on those CI runners, not on this host when uname is Linux."
+    echo "- two real machines (a pass here does not cover these):"
+    awk '/two-machines:start/,/two-machines:end/' "$SKILL_DIR/SKILL.md" | grep -v 'two-machines:'
+  } | tee "$RUN_DIR/gaps.txt" | tee -a "$TRANSCRIPT"
+}
+
+write_summary_json() {
+  RUN_DIR="$RUN_DIR" python3 - <<'PY'
+import json, os
+from pathlib import Path
+run = Path(os.environ["RUN_DIR"])
+steps = []
+for line in (run / "summary.txt").read_text().splitlines():
+    parts = line.split()
+    if len(parts) == 3 and parts[0] == "RESULT":
+        steps.append({"name": parts[1], "result": parts[2], "log": str(run / f"{parts[1]}.log")})
+gaps = []
+gap_file = run / "gaps.txt"
+if gap_file.exists():
+    gaps = [line for line in gap_file.read_text().splitlines() if line.startswith("- ")]
+head = "unknown"
+transcript = (run / "transcript.txt").read_text().splitlines()
+for line in transcript:
+    if line.startswith("head "):
+        head = line.split(" ", 1)[1]
+        break
+payload = {
+    "run_id": run.name,
+    "evidence": str(run),
+    "head": head,
+    "steps": steps,
+    "gaps": gaps,
+}
+(run / "summary.json").write_text(json.dumps(payload, indent=2) + "\n")
+PY
+  echo "summary $RUN_DIR/summary.json" | tee -a "$TRANSCRIPT"
+  echo "EVIDENCE=$RUN_DIR" | tee -a "$TRANSCRIPT"
+}
+
+# Absolute path with symlinks resolved. python3, not GNU readlink -f: BSD
+# readlink on macOS rejects -f, and cleanup has to work on a Peer OS.
+resolve_path() {
+  local resolved
+  resolved="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1")" || return 1
+  [[ -n "$resolved" ]] || return 1
+  printf '%s\n' "$resolved"
+}
+
+cmd_cleanup() {
+  local dir="${1:-$EVIDENCE_ROOT/latest}"
+  local root_real dir_real
+  if [[ ! -e "$dir" ]]; then
+    die "no run directory at $dir"
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    die "python3 is required to resolve cleanup paths"
+  fi
+  root_real="$(resolve_path "$EVIDENCE_ROOT")" || die "could not resolve $EVIDENCE_ROOT"
+  dir_real="$(resolve_path "$dir")" || die "could not resolve $dir"
+  if [[ -z "$root_real" || -z "$dir_real" ]]; then
+    die "resolved cleanup path is empty"
+  fi
+  case "$dir_real" in
+    "$root_real" | "$root_real"/*) ;;
+    *) die "refusing to clean $dir_real (outside $root_real)" ;;
+  esac
+  if [[ -f "$dir_real/pids" ]]; then
+    while read -r pid; do
+      [[ -n "${pid:-}" ]] || continue
+      if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        echo "killed $pid"
+      else
+        echo "pid $pid already gone"
+      fi
+    done <"$dir_real/pids"
+  fi
+  if [[ -d "$dir_real/scratch" ]]; then
+    rm -rf "$dir_real/scratch"
+    echo "removed $dir_real/scratch"
+  fi
+  if [[ ! -f "$dir_real/transcript.txt" ]]; then
+    echo "cleanup removed evidence at $dir_real/transcript.txt" >&2
+    exit 1
+  fi
+  echo "evidence kept at $dir_real/transcript.txt"
+}
+
+cmd_drive() {
+  local feature="${1:-}"
+  [[ -n "$feature" ]] || die "drive needs a feature name"
+  case "$feature" in
+    crossing | pairing | clipboard | arrangement | selftest) ;;
+    *) die "unknown feature '$feature' (crossing, pairing, clipboard, arrangement, selftest)" ;;
+  esac
+  begin_run
+  step_doctor
+  if grep -q 'RESULT doctor FAIL' "$RUN_DIR/summary.txt"; then
+    echo "doctor failed; not driving $feature" | tee -a "$TRANSCRIPT"
+    write_summary_json
+    exit 1
+  fi
+  case "$feature" in
+    crossing) drive_crossing ;;
+    pairing) drive_pairing ;;
+    clipboard) drive_clipboard ;;
+    arrangement) drive_arrangement ;;
+    selftest) step_selftest ;;
+  esac
+  write_gaps
+  write_summary_json
+  exit "$FAILED"
+}
+
+cmd_all() {
+  begin_run
+  step_doctor
+  step_fmt
+  step_clippy
+  step_test
+  step_e2e
+  step_fake
+  step_build
+  step_cli
+  step_selftest
+  write_gaps
+  write_summary_json
+  exit "$FAILED"
+}
+
+main() {
+  local cmd="${1:-all}"
+  case "$cmd" in
+    -h | --help | help) usage ;;
+    doctor)
+      begin_run
+      step_doctor
+      write_summary_json
+      exit "$FAILED"
+      ;;
+    drive)
+      shift
+      cmd_drive "${1:-}"
+      ;;
+    cleanup)
+      shift
+      cmd_cleanup "${1:-}"
+      ;;
+    all) cmd_all ;;
+    *) die "unknown command '$cmd' (try --help)" ;;
+  esac
+}
+
+main "$@"

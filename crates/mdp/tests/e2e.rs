@@ -100,7 +100,11 @@ fn mouse(x: f64, y: f64) -> InputEvent {
     InputEvent::MouseMove { x, y }
 }
 
-/// Drive both peers until three consecutive quiet ticks (5 ms each).
+/// Drive both peers until three consecutive quiet ticks (50 ms each).
+/// The capture bridge runs on a blocking thread; a shorter tick can declare
+/// quiet before that thread has forwarded a physical event.
+/// Nagle is off on the Link (`paired_links_disable_nagle`); this tick does
+/// not stand in for that check.
 /// Returns the first drive error seen (e.g. a dead Link).
 async fn settle<PA, PB>(a: &mut Peer<PA>, b: &mut Peer<PB>) -> Option<PeerError>
 where
@@ -110,12 +114,12 @@ where
     let mut quiet = 0;
     for _ in 0..500 {
         let mut round_quiet = true;
-        match tokio::time::timeout(Duration::from_millis(5), a.drive_step()).await {
+        match tokio::time::timeout(Duration::from_millis(50), a.drive_step()).await {
             Ok(Ok(())) => round_quiet = false,
             Ok(Err(err)) => return Some(err),
             Err(_) => {}
         }
-        match tokio::time::timeout(Duration::from_millis(5), b.drive_step()).await {
+        match tokio::time::timeout(Duration::from_millis(50), b.drive_step()).await {
             Ok(Ok(())) => round_quiet = false,
             Ok(Err(err)) => return Some(err),
             Err(_) => {}
