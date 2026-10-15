@@ -86,8 +86,8 @@ LaunchAgent on macOS.
 | Symptom | Fix |
 |---|---|
 | Cursor won't cross | Check the tray says *Linked*. Make sure the tiles in Arrange match your desk: the edge you push through must be the shared one. |
-| Mac ignores input or the permissions screen won't clear | System Settings → Privacy & Security: re-add `mdp` under both Accessibility and Input Monitoring, then restart mdp. |
-| Machines don't see each other | Allow `mdp` through the Windows firewall (private networks) and check TCP port 24800. Or set `peer` manually (above). |
+| Mac ignores input or the permissions screen won't clear | System Settings → Privacy & Security: re-add `mdp` under both Accessibility and Input Monitoring. The screen clears by itself (re-checked about every second) and capture retries automatically (can take ~30s) — relaunch only if input stays dead after both show granted. |
+| Machines don't see each other | Allow `mdp` through the Windows firewall (private networks): TCP port 24800 (default) plus mDNS discovery (UDP 5353 multicast, service `_mdp._tcp.local`). Or set `peer` manually (above). |
 | A key seems stuck | Press Ctrl + Alt + Shift + Esc. Every Crossing also releases all held keys. |
 | Can't control the Windows login screen or UAC prompts | By design: mdp runs as your user, and Windows keeps those desktops isolated. |
 | Check the input hooks work on this machine | `mdp selftest` injects a test event and confirms it isn't looped back. It exits 0 when healthy. |
