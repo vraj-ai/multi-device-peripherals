@@ -91,6 +91,8 @@ LaunchAgent on macOS.
 | A key seems stuck | Press Ctrl + Alt + Shift + Esc. Every Crossing also releases all held keys. |
 | Can't control the Windows login screen or UAC prompts | By design: mdp runs as your user, and Windows keeps those desktops isolated. |
 | Check the input hooks work on this machine | `mdp selftest` injects a test event and confirms it isn't looped back. It exits 0 when healthy. |
+| `permission denied` running `target/release/mdp` after a build | The release build ran out of disk and left a non-executable binary. Free space, then `cargo clean -p mdp`, rebuild with `cargo build --release -p mdp`, and check `ls -l target/release/mdp` shows an executable. |
+| `mdp: command not found` (including running selftest) | Run from the repo folder as `./target/release/mdp selftest`, or by full path, or add `target/release` to PATH. |
 
 ## Commands
 
