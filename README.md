@@ -115,7 +115,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-CI runs all three on Windows and macOS. Design notes live in `CONTEXT/` (architecture,
+CI runs all three on Windows, macOS, and Linux. Design notes live in `CONTEXT/` (architecture,
 glossary, ADRs, UI spec) and the visual mockups in `docs/design/`.
 
 Real-machine acceptance: `docs/real-machine-checklist.md`.
