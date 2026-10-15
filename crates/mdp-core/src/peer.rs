@@ -470,12 +470,13 @@ impl<P: Platform> Peer<P> {
             }
             return Ok(());
         }
+        // Remember it before sending: `drive` can cancel this mid-send, and a
+        // committed frame is still delivered. Re-sending 1 MiB every poll on
+        // a slow Link would never finish.
+        self.last_clipboard = Some(current.clone());
         self.link
-            .send_frame(&Frame::Clipboard {
-                text: current.clone(),
-            })
+            .send_frame(&Frame::Clipboard { text: current })
             .await?;
-        self.last_clipboard = Some(current);
         Ok(())
     }
 

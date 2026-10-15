@@ -16,11 +16,19 @@ use tokio::net::{TcpStream, ToSocketAddrs};
 /// Noise pattern for the Link: mutually authenticated, no prior knowledge.
 pub const NOISE_PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 
-/// Bytes Noise appends per encrypted frame (ChaChaPoly authentication tag).
+/// Bytes Noise appends per encrypted message (ChaChaPoly authentication tag).
 pub const NOISE_TAG_LEN: usize = 16;
 
-/// Largest accepted encrypted wire payload: 1 MiB frame body plus tag.
-pub const MAX_WIRE_BYTES: usize = MAX_FRAME_BYTES + NOISE_TAG_LEN;
+/// Largest Noise message, tag included (the spec's limit; `snow` enforces it).
+pub const NOISE_MAX_MESSAGE: usize = 65535;
+
+/// Frame body bytes carried by one full Noise message.
+const NOISE_MAX_PLAINTEXT: usize = NOISE_MAX_MESSAGE - NOISE_TAG_LEN;
+
+/// Largest accepted encrypted wire payload: the largest frame body plus one
+/// tag per Noise message it takes.
+pub const MAX_WIRE_BYTES: usize =
+    MAX_FRAME_BYTES + NOISE_TAG_LEN * MAX_FRAME_BYTES.div_ceil(NOISE_MAX_PLAINTEXT);
 
 /// Bytes of a serialized [`StaticKeypair`] (private key then public key).
 pub const KEYPAIR_BYTES_LEN: usize = 64;
@@ -244,15 +252,39 @@ impl Link {
         let body = encode_frame(frame)?;
         // Finish an earlier cancelled frame before spending a nonce on this
         // one, so at most one committed frame is ever buffered.
-        self.stream.write_all_buf(&mut self.write_buf).await?;
+        self.flush_write_buf().await?;
         // Length prefix and ciphertext in one buffer: split writes let Nagle
         // hold the body back a delayed-ACK interval behind its prefix.
-        let mut wire = vec![0u8; 4 + body.len() + NOISE_TAG_LEN];
-        let len = self.transport.write_message(&body, &mut wire[4..])?;
-        wire[..4].copy_from_slice(&(len as u32).to_be_bytes());
-        self.write_buf.extend(&wire[..4 + len]);
-        // Cancel-safe: tokio advances the buffer past whatever was written.
-        self.stream.write_all_buf(&mut self.write_buf).await?;
+        let cipher = seal(&mut self.transport, &body)?;
+        self.write_buf.extend((cipher.len() as u32).to_be_bytes());
+        self.write_buf.extend(&cipher);
+        self.flush_write_buf().await
+    }
+
+    /// Write out [`Self::write_buf`], reading into [`Self::read_buf`] while
+    /// the socket is full: a frame can outgrow the socket buffers, and two
+    /// Peers both blocked writing, neither reading, would wait forever.
+    /// Cancel-safe: each branch either moves bytes between socket and
+    /// buffer or does nothing.
+    async fn flush_write_buf(&mut self) -> Result<(), LinkError> {
+        let (mut reader, mut writer) = self.stream.split();
+        while !self.write_buf.is_empty() {
+            let mut tmp = [0u8; 8192];
+            tokio::select! {
+                written = writer.write_buf(&mut self.write_buf) => {
+                    if written? == 0 {
+                        return Err(LinkError::Closed);
+                    }
+                }
+                read = reader.read(&mut tmp) => {
+                    let n = read?;
+                    if n == 0 {
+                        return Err(LinkError::Closed);
+                    }
+                    self.read_buf.extend_from_slice(&tmp[..n]);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -288,10 +320,34 @@ impl Link {
         }
         let cipher = self.read_buf[4..4 + wire_len].to_vec();
         self.read_buf.drain(..4 + wire_len);
-        let mut body = vec![0u8; wire_len];
-        let n = self.transport.read_message(&cipher, &mut body)?;
-        Ok(Some(decode_frame(&body[..n])?))
+        let body = open(&mut self.transport, &cipher)?;
+        Ok(Some(decode_frame(&body)?))
     }
+}
+
+/// Encrypt a frame body as back-to-back Noise messages, each at most
+/// [`NOISE_MAX_MESSAGE`] bytes. A body that fits one message (every frame a
+/// v1 peer can send) encrypts exactly as before; only the last message may
+/// be short, so [`open`] can find the boundaries from the length alone.
+fn seal(transport: &mut snow::TransportState, body: &[u8]) -> Result<Vec<u8>, LinkError> {
+    let messages = body.len().div_ceil(NOISE_MAX_PLAINTEXT);
+    let mut cipher = vec![0u8; body.len() + messages * NOISE_TAG_LEN];
+    let mut written = 0;
+    for chunk in body.chunks(NOISE_MAX_PLAINTEXT) {
+        written += transport.write_message(chunk, &mut cipher[written..])?;
+    }
+    Ok(cipher)
+}
+
+/// Decrypt what [`seal`] produced: split every [`NOISE_MAX_MESSAGE`] bytes.
+fn open(transport: &mut snow::TransportState, cipher: &[u8]) -> Result<Vec<u8>, LinkError> {
+    let mut body = vec![0u8; cipher.len()];
+    let mut read = 0;
+    for message in cipher.chunks(NOISE_MAX_MESSAGE) {
+        read += transport.read_message(message, &mut body[read..])?;
+    }
+    body.truncate(read);
+    Ok(body)
 }
 
 async fn finish_handshake<F>(
@@ -306,8 +362,8 @@ where
     // Input frames are small and back to back; Nagle would hold each one
     // behind the previous frame's ACK, far past the crossing latency budget.
     stream.set_nodelay(true)?;
-    let mut read_buf = vec![0u8; 65535];
-    let mut msg_buf = vec![0u8; 65535];
+    let mut read_buf = vec![0u8; NOISE_MAX_MESSAGE];
+    let mut msg_buf = vec![0u8; NOISE_MAX_MESSAGE];
     while !session.is_handshake_finished() {
         if session.is_my_turn() {
             let len = session.write_message(&[], &mut msg_buf)?;
@@ -385,7 +441,7 @@ mod tests {
                 check_wire_len(MAX_WIRE_BYTES as u32 + 1),
                 Err(LinkError::FrameTooLarge(_))
             ),
-            "ciphertext over 1 MiB + tag must fail"
+            "ciphertext over MAX_WIRE_BYTES must fail"
         );
     }
 
@@ -528,6 +584,131 @@ mod tests {
             .expect("stream desynced: the peer is stuck mid-frame");
         last.expect("send after cancelled send");
         assert_eq!(after, Frame::Ping { t: 9 });
+    }
+
+    #[tokio::test]
+    async fn full_size_clipboard_frame_crosses_and_link_stays_up() {
+        // Noise caps one message at 65535 bytes; a 1 MiB clipboard frame
+        // must still arrive whole, and the Link must keep working after.
+        let (mut source, mut sink) = paired().await;
+        let big = Frame::Clipboard {
+            text: "x".repeat(crate::platform::CLIPBOARD_MAX_BYTES),
+        };
+        let both = async { tokio::join!(source.send_frame(&big), sink.recv_frame()) };
+        let (sent, received) = tokio::time::timeout(std::time::Duration::from_secs(10), both)
+            .await
+            .expect("1 MiB frame stuck");
+        sent.expect("send 1 MiB clipboard");
+        assert_eq!(received.expect("recv 1 MiB clipboard"), big);
+        source
+            .send_frame(&Frame::Ping { t: 3 })
+            .await
+            .expect("send after big frame");
+        assert_eq!(
+            sink.recv_frame().await.expect("recv after big frame"),
+            Frame::Ping { t: 3 }
+        );
+    }
+
+    /// A Clipboard frame whose encoded body is exactly `len` bytes.
+    fn clipboard_with_body(len: usize) -> Frame {
+        let mut text = "x".repeat(len);
+        while encode_frame(&Frame::Clipboard { text: text.clone() })
+            .expect("encode")
+            .len()
+            > len
+        {
+            text.pop();
+        }
+        let frame = Frame::Clipboard { text };
+        assert_eq!(encode_frame(&frame).expect("encode").len(), len);
+        frame
+    }
+
+    #[tokio::test]
+    async fn frames_that_fit_one_noise_message_keep_the_v1_wire() {
+        // A body up to 65519 bytes is one Noise message: a v1 receiver's
+        // single read_message over the whole payload must decrypt it. Larger
+        // bodies are full 65535-byte messages plus one shorter tail.
+        let (mut source, mut sink) = paired().await;
+        let full = NOISE_MAX_MESSAGE - NOISE_TAG_LEN;
+        for (body_len, messages) in [(full, 1), (full + 1, 2), (2 * full, 2), (2 * full + 1, 3)] {
+            let frame = clipboard_with_body(body_len);
+            let send = source.send_frame(&frame);
+            let read = async {
+                let len = sink.stream.read_u32().await.expect("length") as usize;
+                let mut cipher = vec![0u8; len];
+                sink.stream
+                    .read_exact(&mut cipher)
+                    .await
+                    .expect("ciphertext");
+                cipher
+            };
+            let both = async { tokio::join!(send, read) };
+            let (sent, cipher) = tokio::time::timeout(std::time::Duration::from_secs(10), both)
+                .await
+                .expect("frame stuck");
+            sent.expect("send");
+            assert_eq!(cipher.len(), body_len + messages * NOISE_TAG_LEN);
+            let mut body = Vec::new();
+            for message in cipher.chunks(NOISE_MAX_MESSAGE) {
+                let mut plain = vec![0u8; message.len()];
+                let n = sink
+                    .transport
+                    .read_message(message, &mut plain)
+                    .expect("each message decrypts on its own");
+                body.extend_from_slice(&plain[..n]);
+            }
+            assert_eq!(body, encode_frame(&frame).expect("encode"), "{body_len}");
+        }
+    }
+
+    #[tokio::test]
+    async fn both_sides_sending_large_frames_at_once_do_not_deadlock() {
+        // Each side writes more than the socket buffers hold before it reads
+        // anything (two clipboards copied in the same poll window).
+        let (a, b) = paired().await;
+        let frames: Vec<Frame> = (b'a'..b'e')
+            .map(|letter| Frame::Clipboard {
+                text: char::from(letter)
+                    .to_string()
+                    .repeat(crate::platform::CLIPBOARD_MAX_BYTES),
+            })
+            .collect();
+        let swap = |mut link: Link| {
+            let frames = frames.clone();
+            async move {
+                for frame in &frames {
+                    link.send_frame(frame).await.expect("send");
+                }
+                for frame in &frames {
+                    assert_eq!(&link.recv_frame().await.expect("recv"), frame);
+                }
+            }
+        };
+        let both = async { tokio::join!(swap(a), swap(b)) };
+        tokio::time::timeout(std::time::Duration::from_secs(30), both)
+            .await
+            .expect("both senders blocked: nobody reads while writing");
+    }
+
+    #[tokio::test]
+    async fn tampered_multi_message_frame_is_refused() {
+        let (mut source, mut sink) = paired().await;
+        let body = encode_frame(&clipboard_with_body(100_000)).expect("encode");
+        let mut cipher = seal(&mut source.transport, &body).expect("seal");
+        *cipher.last_mut().expect("non-empty") ^= 1;
+        source
+            .stream
+            .write_all(&(cipher.len() as u32).to_be_bytes())
+            .await
+            .expect("write length");
+        source
+            .stream
+            .write_all(&cipher)
+            .await
+            .expect("write cipher");
+        assert!(matches!(sink.recv_frame().await, Err(LinkError::Noise(_))));
     }
 
     #[tokio::test]

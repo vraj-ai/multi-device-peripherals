@@ -23,7 +23,14 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
 - **Transport:** TCP, one connection per pair, length-prefixed binary frames,
   encrypted with Noise `XX` (`snow` crate). First connect shows a 6-digit
   pairing code on both machines; after the user confirms, each side pins the
-  peer's static key. Unknown keys are refused.
+  peer's static key. Unknown keys are refused. On the wire a frame is a
+  big-endian `u32` ciphertext length, then its body sealed as back-to-back
+  Noise messages of at most 65535 bytes (Noise's cap); only the last may be
+  short. Frames that fit one message are byte-identical to early v1 builds,
+  which is every frame those builds can send. Accepted limit: an early build
+  cannot read a larger frame, so a clipboard over ~64 KiB from a newer peer
+  ends that Session once (as it did before, on the sender). Hello cannot gate
+  it: any version mismatch is fatal there.
 - **Discovery:** mDNS on the LAN (`_mdp._tcp`) plus a manual `host:port` in
   config (works with Tailscale MagicDNS names).
 - **Layout:** each machine's **Desktop** is the bounding box of its monitors in

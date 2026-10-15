@@ -276,6 +276,23 @@ async fn clipboard_text_syncs_without_echo() {
     assert_eq!(a.platform().clipboard_get().unwrap(), "hello peer");
 }
 
+/// A clipboard at the full 1 MiB cap (far past one 64 KiB Noise message)
+/// reaches B, and the session stays up: a crossing still works after it.
+#[tokio::test]
+async fn full_size_clipboard_syncs_and_session_survives() {
+    let (mut a, mut b) = pair(Arrangement::new(Side::Right), Arrangement::new(Side::Left)).await;
+    let big = "x".repeat(CLIPBOARD_MAX_BYTES);
+    a.platform_mut().clipboard_set(&big).unwrap();
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(b.platform().clipboard_get().unwrap(), big);
+    feed(&mut a, mouse(1919.0, 540.0));
+    feed(&mut a, mouse(1925.0, 540.0));
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(a.focus(), Focus::Remote);
+    assert_eq!(b.focus(), Focus::Local);
+}
+
 #[tokio::test]
 async fn connecting_does_not_push_what_was_already_copied() {
     let copied = |desktop| {
