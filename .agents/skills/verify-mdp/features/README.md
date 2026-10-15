@@ -14,7 +14,7 @@ This directory is the maintained source for verifying what a person can do with 
 
 - Start from the feature file's preconditions.
 - Treat every command as literal.
-- Run drives through `.cursor/skills/verify-mdp/verify-mdp`.
+- Run drives through `.agents/skills/verify-mdp/verify-mdp`.
 - A full "done" proof is `verify-mdp` with no arguments, not a single feature.
 - Cleanup removes scratch state and recorded pids only. Proof logs stay.
 

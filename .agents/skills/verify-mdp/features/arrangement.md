@@ -24,7 +24,7 @@ Preconditions:
 - `verify-mdp doctor` passed.
 - Do not open the live Arrange window against the user's config.
 
-- **Place and save.** Run `.cursor/skills/verify-mdp/verify-mdp drive arrangement`. Exit code 0. The log shows `drag_right_then_save_emits_right` and `arrow_keys_revert_and_receive` as `ok`.
+- **Place and save.** Run `.agents/skills/verify-mdp/verify-mdp drive arrangement`. Exit code 0. The log shows `drag_right_then_save_emits_right` and `arrow_keys_revert_and_receive` as `ok`.
 - **Mirror and cross.** The log shows `mirror_flips_side_and_offset` and `arrangement_top_crosses_with_mirrored_wire_frames` as `ok`.
 - **Session ends.** The log shows `saved_arrangement_ends_both_sessions_with_the_senders_view` as `ok`.
 

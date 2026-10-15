@@ -23,7 +23,7 @@ Preconditions:
 - `verify-mdp doctor` passed.
 - Do not run `mdp pair` or the app. Both would rewrite the real config and bind port 24800.
 
-- **Same code, then frames.** Run `.cursor/skills/verify-mdp/verify-mdp drive pairing`. Exit code 0. The log shows `pairing_code_is_six_digits_and_stable` and `loopback_pairing_exchanges_frames_both_ways` as `ok`.
+- **Same code, then frames.** Run `.agents/skills/verify-mdp/verify-mdp drive pairing`. Exit code 0. The log shows `pairing_code_is_six_digits_and_stable` and `loopback_pairing_exchanges_frames_both_ways` as `ok`.
 - **Reject.** The log shows `rejecting_pairing_code_closes_without_frames`, `mismatch_rejects`, and `expiry_rejects` as `ok`.
 - **Window.** The log shows `shows_code_in_two_groups_and_confirms` as `ok` (the button labeled `Codes match — pair`).
 - **Stranger.** The log shows `pinned_link_refuses_impostor_and_hides_plaintext` as `ok`.

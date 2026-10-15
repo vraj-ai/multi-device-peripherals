@@ -23,7 +23,7 @@ Preconditions:
 - `verify-mdp doctor` passed.
 - This drive does not read or write the OS clipboard of the machine running it.
 
-- **Sync once.** Run `.cursor/skills/verify-mdp/verify-mdp drive clipboard`. Exit code 0. The log shows `clipboard_text_syncs_without_echo` as `ok`.
+- **Sync once.** Run `.agents/skills/verify-mdp/verify-mdp drive clipboard`. Exit code 0. The log shows `clipboard_text_syncs_without_echo` as `ok`.
 - **Already copied.** The log shows `connecting_does_not_push_what_was_already_copied` as `ok`.
 - **Sync off and too big.** The log shows `clipboard_toggle_off_sends_nothing` and `oversize_clipboard_is_not_sent` as `ok`.
 
