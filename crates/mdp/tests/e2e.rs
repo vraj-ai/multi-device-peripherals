@@ -388,6 +388,29 @@ async fn oversize_clipboard_is_not_sent() {
     assert!(settle(&mut a, &mut b).await.is_none());
     assert_eq!(b.platform().clipboard_get().unwrap(), "");
     assert_eq!(a.platform().clipboard(), big);
+    // The skipped copy left the session up: a later crossing still flows.
+    for x in [1919.0, 1925.0] {
+        let fake = &mut a.platform_mut().inner;
+        fake.feed_physical_event(mouse(x, 540.0)).unwrap();
+    }
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(a.focus(), Focus::Remote);
+    assert!(b.platform().warp_log().contains(&(1.0, 540.0)));
+}
+
+#[tokio::test]
+async fn clipboard_at_cap_syncs_and_the_session_continues() {
+    let (mut a, mut b) = pair(Arrangement::new(Side::Right), Arrangement::new(Side::Left)).await;
+    let at_cap = "x".repeat(CLIPBOARD_MAX_BYTES);
+    a.platform_mut().clipboard_set(&at_cap).unwrap();
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(b.platform().clipboard_get().unwrap(), at_cap);
+    feed(&mut a, mouse(1919.0, 540.0));
+    feed(&mut a, mouse(1925.0, 540.0));
+    assert!(settle(&mut a, &mut b).await.is_none());
+    assert_eq!(a.focus(), Focus::Remote);
+    assert!(b.platform().warp_log().contains(&(1.0, 540.0)));
 }
 
 #[tokio::test]

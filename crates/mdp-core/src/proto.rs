@@ -87,7 +87,8 @@ pub enum Frame {
     ClaimSource {
         seq: u64,
     },
-    /// Clipboard text sync (UTF-8, at most 1 MiB).
+    /// Clipboard text sync (UTF-8, at most
+    /// [`CLIPBOARD_MAX_BYTES`](crate::platform::CLIPBOARD_MAX_BYTES)).
     Clipboard {
         text: String,
     },
