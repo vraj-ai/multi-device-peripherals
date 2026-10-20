@@ -444,6 +444,7 @@ drive_clipboard() {
   require_ok clipboard-existing cargo test -p mdp --test e2e connecting_does_not_push_what_was_already_copied -- --nocapture || failed=1
   require_ok clipboard-off cargo test -p mdp --test e2e clipboard_toggle_off_sends_nothing -- --nocapture || failed=1
   require_ok clipboard-oversize cargo test -p mdp --test e2e oversize_clipboard_is_not_sent -- --nocapture || failed=1
+  require_ok clipboard-at-cap cargo test -p mdp --test e2e clipboard_at_cap_syncs_and_the_session_continues -- --nocapture || failed=1
   if [[ "$failed" -eq 0 ]]; then
     note_result clipboard PASS
   else
