@@ -9,6 +9,7 @@ Clipboard sync copies UTF-8 text from one computer to the other while they are l
 - `already-copied`: text on the clipboard at connect time is not pushed.
 - `toggle-off`: with sync disabled, a new copy stays local.
 - `oversize`: a payload bigger than the cap is not sent, and the session stays up.
+- `midsize`: a 200,000-byte payload, above the cap but below the 1 MiB codec limit, is not sent, and the session stays up.
 - `at-cap`: a payload of exactly the cap syncs in one Noise message, and the session stays up.
 
 ## How to get to it (user POV)
@@ -27,6 +28,7 @@ Preconditions:
 - **Sync once.** Run `.agents/skills/verify-mdp/verify-mdp drive clipboard`. Exit code 0. The log shows `clipboard_text_syncs_without_echo` as `ok`.
 - **Already copied.** The log shows `connecting_does_not_push_what_was_already_copied` as `ok`.
 - **Sync off and too big.** The log shows `clipboard_toggle_off_sends_nothing` and `oversize_clipboard_is_not_sent` as `ok`.
+- **Above the cap, below the codec limit.** The log shows `midsize_clipboard_is_skipped_and_the_session_continues` as `ok`.
 - **At the cap.** The log shows `clipboard_at_cap_syncs_and_the_session_continues` as `ok`.
 
 ## Gotchas

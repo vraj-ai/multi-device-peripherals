@@ -327,10 +327,10 @@ struct OversizeClipboard {
 }
 
 impl OversizeClipboard {
-    fn new(desktop: Desktop, clipboard: String) -> Self {
+    fn new(desktop: Desktop) -> Self {
         Self {
             inner: FakePlatform::new(desktop),
-            clipboard,
+            clipboard: String::new(),
         }
     }
 
@@ -372,20 +372,37 @@ impl Platform for OversizeClipboard {
 
 #[tokio::test]
 async fn oversize_clipboard_is_not_sent() {
-    let big = "x".repeat(CLIPBOARD_MAX_BYTES + 1);
+    copy_is_skipped_and_the_session_continues("x".repeat(CLIPBOARD_MAX_BYTES + 1)).await;
+}
+
+/// A copy between the cap and the 1 MiB codec limit encodes fine but does
+/// not fit one Noise message; sending it would end the session.
+#[tokio::test]
+async fn midsize_clipboard_is_skipped_and_the_session_continues() {
+    copy_is_skipped_and_the_session_continues("x".repeat(200_000)).await;
+}
+
+/// Peer A copies `big` after connecting: B never receives it, and a later
+/// crossing still flows.
+async fn copy_is_skipped_and_the_session_continues(big: String) {
     let (mut a, mut b) = pair_with(
         Arrangement::new(Side::Right),
         Arrangement::new(Side::Left),
         true,
-        |desktop| OversizeClipboard::new(desktop, big.clone()),
+        OversizeClipboard::new,
         FakePlatform::new,
     )
     .await;
+    // Copied after connect: text already present at connect is never sent,
+    // so it would not reach the size check.
+    a.platform_mut().clipboard_set(&big).unwrap();
     // Two full poll windows with the oversize text present.
     tokio::time::sleep(Duration::from_millis(700)).await;
-    assert!(settle(&mut a, &mut b).await.is_none());
+    let err = settle(&mut a, &mut b).await;
+    assert!(err.is_none(), "session dropped: {err:?}");
     tokio::time::sleep(Duration::from_millis(700)).await;
-    assert!(settle(&mut a, &mut b).await.is_none());
+    let err = settle(&mut a, &mut b).await;
+    assert!(err.is_none(), "session dropped: {err:?}");
     assert_eq!(b.platform().clipboard_get().unwrap(), "");
     assert_eq!(a.platform().clipboard(), big);
     // The skipped copy left the session up: a later crossing still flows.
@@ -393,7 +410,8 @@ async fn oversize_clipboard_is_not_sent() {
         let fake = &mut a.platform_mut().inner;
         fake.feed_physical_event(mouse(x, 540.0)).unwrap();
     }
-    assert!(settle(&mut a, &mut b).await.is_none());
+    let err = settle(&mut a, &mut b).await;
+    assert!(err.is_none(), "session dropped: {err:?}");
     assert_eq!(a.focus(), Focus::Remote);
     assert!(b.platform().warp_log().contains(&(1.0, 540.0)));
 }
