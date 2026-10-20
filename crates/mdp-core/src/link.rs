@@ -485,6 +485,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn clipboard_at_cap_fits_one_noise_message() {
+        use crate::platform::CLIPBOARD_MAX_BYTES;
+
+        // Noise encodes a message length in 16 bits, so one ciphertext
+        // (frame body plus authentication tag) cannot exceed that.
+        let body_len = encode_frame(&Frame::Clipboard {
+            text: "x".repeat(CLIPBOARD_MAX_BYTES),
+        })
+        .expect("clipboard at cap encodes")
+        .len();
+        assert!(
+            body_len + NOISE_TAG_LEN <= usize::from(u16::MAX),
+            "clipboard cap {CLIPBOARD_MAX_BYTES} bytes encodes to {body_len} frame bytes; \
+             plus the {NOISE_TAG_LEN}-byte Noise tag that exceeds one Noise message"
+        );
+
+        // The real transport must carry it as a single message, intact.
+        let (mut source, mut sink) = paired().await;
+        let text = "x".repeat(CLIPBOARD_MAX_BYTES);
+        source
+            .send_frame(&Frame::Clipboard { text: text.clone() })
+            .await
+            .expect("clipboard at cap sends in one Noise message");
+        assert_eq!(
+            sink.recv_frame().await.expect("clipboard at cap arrives"),
+            Frame::Clipboard { text }
+        );
+    }
+
+    #[tokio::test]
     async fn send_frame_survives_cancellation_with_full_socket() {
         // The peer is not reading, so the socket buffers fill and a send
         // blocks partway; a select/timeout then drops it.
