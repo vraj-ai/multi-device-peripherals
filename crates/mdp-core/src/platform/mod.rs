@@ -9,8 +9,9 @@ pub mod fake;
 pub use fake::FakePlatform;
 use serde::{Deserialize, Serialize};
 
-/// Maximum clipboard payload in bytes (UTF-8 text only, capped at 1 MiB).
-pub const CLIPBOARD_MAX_BYTES: usize = 1024 * 1024;
+/// Maximum clipboard payload in bytes (UTF-8 text only). Owned by
+/// [`crate::limits`] so it stays inside the frame cap.
+pub use crate::limits::CLIPBOARD_MAX_BYTES;
 
 /// Bounding box of one Peer's monitors, in logical points.
 ///

@@ -13,10 +13,9 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// Bytes of the `u32` length prefix on the wire.
 pub const FRAME_HEADER_LEN: usize = 4;
 
-/// Largest accepted encoded frame body in bytes (1 MiB, matching the
-/// clipboard cap). With the length header, the largest wire frame is
-/// 1 MiB + header.
-pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+/// Largest accepted encoded frame body. Owned by [`crate::limits`], so the
+/// clipboard cap and the frame cap cannot be edited apart.
+pub use crate::limits::MAX_FRAME_BYTES;
 
 /// Which side of this Peer's Desktop the other Peer's Desktop sits on.
 /// Appended variants keep the existing postcard indices stable.
@@ -150,6 +149,25 @@ pub fn decode_frame(body: &[u8]) -> Result<Frame, CodecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::CLIPBOARD_MAX_BYTES;
+
+    #[test]
+    fn max_clipboard_frame_fits_the_wire_cap() {
+        let fitted = encode_frame(&Frame::Clipboard {
+            text: "x".repeat(CLIPBOARD_MAX_BYTES),
+        });
+        assert!(
+            fitted.is_ok(),
+            "a clipboard of CLIPBOARD_MAX_BYTES bytes must encode under MAX_FRAME_BYTES, got {fitted:?}"
+        );
+        let over = encode_frame(&Frame::Clipboard {
+            text: "x".repeat(CLIPBOARD_MAX_BYTES + 1),
+        });
+        assert!(
+            matches!(over, Err(CodecError::FrameTooLarge(_))),
+            "one byte over the clipboard cap must be refused, got {over:?}"
+        );
+    }
 
     fn every_frame() -> Vec<Frame> {
         vec![

@@ -8,6 +8,7 @@
 
 pub mod crossing;
 pub mod keymap;
+pub mod limits;
 pub mod link;
 pub mod peer;
 pub mod platform;
