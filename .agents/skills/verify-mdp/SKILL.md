@@ -61,7 +61,7 @@ A full proof, which is what "done" requires, is:
 .agents/skills/verify-mdp/verify-mdp
 ```
 
-That runs doctor, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the `e2e` integration test, the `fake_platform` unit tests, `cargo build -p mdp`, `mdp --help` and `mdp --version` inside a scratch home, and `mdp selftest`.
+That runs doctor, `cargo test -p mdp --test rules` (the prose rules, and it fails the run on any new violation), `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the `e2e` integration test, the `fake_platform` unit tests, `cargo build -p mdp`, `mdp --help` and `mdp --version` inside a scratch home, and `mdp selftest`. Clippy's `-D warnings` fails the run on a new warning.
 
 Stable handles are the subcommands `run`, `ui`, `pair`, `selftest`, the help text, and these test names:
 
@@ -70,6 +70,7 @@ Stable handles are the subcommands `run`, `ui`, `pair`, `selftest`, the help tex
 - Clipboard: `clipboard_text_syncs_without_echo`, `connecting_does_not_push_what_was_already_copied`, `clipboard_toggle_off_sends_nothing`, `oversize_clipboard_is_not_sent`
 - Arrangement: `arrangement_top_crosses_with_mirrored_wire_frames`, `saved_arrangement_ends_both_sessions_with_the_senders_view`, `drag_right_then_save_emits_right`, `arrow_keys_revert_and_receive`, `mirror_flips_side_and_offset`
 - Fake platform: `fake_platform_feeds_physical_and_records_injected`, `fake_platform_rejects_oversize_clipboard`
+- Rules: `repo_rules_hold`, `bad_patterns_name_the_fix` (`cargo test -p mdp --test rules`)
 
 `FakePlatform` is the production test double for the OS boundary (`crates/mdp-core/src/platform/fake.rs`). The e2e peers still speak real Noise-encrypted TCP on loopback. Do not add a second mock in front of the link. UI tests drive the real egui widgets through `egui_kittest` (button text `Codes match — pair`, `They don't match`, `Save`). That is the window harness. It is not a screenshot of a live tray.
 
@@ -125,6 +126,7 @@ A full run is a pass only when every required step is `PASS`. `GAP` is recorded 
 | Step | Required | Pass | Fail |
 |---|---|---|---|
 | `doctor` | yes | cargo and rustc present, workspace members match, and an already-built binary's version matches the manifest | toolchain missing, wrong workspace, or version mismatch |
+| `rules` | yes | `cargo test -p mdp --test rules` exits 0 and both `repo_rules_hold` and `bad_patterns_name_the_fix` end in `ok` | a rule fails, or either test is missing |
 | `fmt` | yes | `cargo fmt --all -- --check` exits 0 | non-zero exit |
 | `clippy` | yes | `cargo clippy --workspace --all-targets -- -D warnings` exits 0 | non-zero exit |
 | `test` | yes | `cargo test --workspace` exits 0 | any non-ignored test fails, or the command errors |

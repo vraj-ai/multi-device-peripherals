@@ -1,6 +1,6 @@
 # Clipboard
 
-Clipboard sync copies UTF-8 text from one computer to the other while they are linked. Text that was already copied before the link came up stays put. Turning sync off, or copying more than 1 MiB, sends nothing.
+Clipboard sync copies UTF-8 text from one computer to the other while they are linked. Text that was already copied before the link came up stays put. Turning sync off, or copying more than `CLIPBOARD_MAX_BYTES` (4 bytes under 1 MiB, so the frame fits), sends nothing.
 
 ## Sub-features
 
@@ -8,7 +8,7 @@ Clipboard sync copies UTF-8 text from one computer to the other while they are l
 - `no-echo`: the copy does not bounce forever.
 - `already-copied`: text on the clipboard at connect time is not pushed.
 - `toggle-off`: with sync disabled, a new copy stays local.
-- `oversize`: a payload bigger than 1 MiB is not sent.
+- `oversize`: a payload bigger than `CLIPBOARD_MAX_BYTES` is not sent.
 
 ## How to get to it (user POV)
 
@@ -30,6 +30,6 @@ Preconditions:
 ## Gotchas
 
 - Images and rich clipboard data are out of scope. Only UTF-8 text moves.
-- The 1 MiB cap is on what is sent. A real desktop can hold a larger copy; that copy must not show up on the other side.
+- The cap is `CLIPBOARD_MAX_BYTES` in `crates/mdp-core/src/limits.rs`, 4 bytes under 1 MiB so the encoded frame fits `MAX_FRAME_BYTES`. A real desktop can hold a larger copy; that copy must not show up on the other side.
 - An echo would keep the peers busy. The test waits two poll windows and requires both clipboards to still read the same text.
 - Real OS clipboards on two machines are a two-machine check.
