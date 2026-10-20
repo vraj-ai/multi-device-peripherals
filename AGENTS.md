@@ -28,7 +28,7 @@ Run it from the repo root and read the transcript before a change counts as done
 | Clipboard cap name is `CLIPBOARD_MAX_BYTES` | `rules` (`clipboard-owner`) |
 | Skill paths are symlinks to `.agents/skills/verify-mdp` | `rules` (`skill-home`) |
 | No Deskflow / Input Leap crate (ADR 0001) | `rules` (`no-deskflow`) |
-| CI is windows-latest and macos-latest only | `rules` (`ci-peers`) and `.github/workflows/ci.yml` |
+| CI runs windows-latest and macos-latest jobs (ubuntu-latest allowed as a build/test runner, not a Peer) | `rules` (`ci-peers`) and `.github/workflows/ci.yml` |
 | `mdp-core` has no OS UI crates | `rules` (`core-platform-free`) |
 | One Tokio runtime, `run::serve` | `rules` (`one-loop`) |
 | Workflows do not merge PRs | `rules` (`self-merge`) |

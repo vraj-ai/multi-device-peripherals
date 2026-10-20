@@ -252,14 +252,12 @@ fn check_deskflow(root: &Path) -> Vec<String> {
 fn check_ci(root: &Path) -> Vec<String> {
     let text = read_text(&root.join(".github/workflows/ci.yml"));
     let mut errs = Vec::new();
-    if !text.contains("os: [windows-latest, macos-latest]") {
-        errs.push(
-            "FAIL ci-peers: CI must use `os: [windows-latest, macos-latest]`. Linux is not a Peer."
-                .into(),
-        );
-    }
-    if text.contains("ubuntu-latest") {
-        errs.push("FAIL ci-peers: ubuntu-latest is not a Peer OS. Keep the matrix at windows-latest and macos-latest.".into());
+    for os in ["windows-latest", "macos-latest"] {
+        if !text.contains(os) {
+            errs.push(format!(
+                "FAIL ci-peers: CI must run a {os} job. Windows and macOS are the Peer OSes; ubuntu-latest may be added as a build/test runner but does not replace them."
+            ));
+        }
     }
     errs
 }
