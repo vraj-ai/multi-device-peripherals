@@ -13,9 +13,12 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// Bytes of the `u32` length prefix on the wire.
 pub const FRAME_HEADER_LEN: usize = 4;
 
-/// Largest accepted encoded frame body in bytes (1 MiB, matching the
-/// clipboard cap). With the length header, the largest wire frame is
-/// 1 MiB + header.
+/// Largest encoded frame body the codec accepts, in bytes (1 MiB). This is
+/// larger than one Noise transport message (65,535 bytes), which is the real
+/// limit on what a Link can send; [`CLIPBOARD_MAX_BYTES`] keeps clipboard
+/// frames inside one message.
+///
+/// [`CLIPBOARD_MAX_BYTES`]: crate::platform::CLIPBOARD_MAX_BYTES
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 /// Which side of this Peer's Desktop the other Peer's Desktop sits on.

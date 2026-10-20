@@ -463,8 +463,8 @@ impl<P: Platform> Peer<P> {
             return Ok(());
         };
         if !clipboard_sendable(self.share_clipboard, &self.last_clipboard, &current) {
-            // Oversize text is still remembered so a stuck clipboard does
-            // not retry every tick; the codec would refuse it anyway.
+            // Oversize text is still remembered so a stuck clipboard is not
+            // re-checked every tick.
             if current.len() > CLIPBOARD_MAX_BYTES {
                 self.last_clipboard = Some(current);
             }
