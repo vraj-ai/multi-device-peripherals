@@ -249,13 +249,44 @@ fn check_deskflow(root: &Path) -> Vec<String> {
     errs
 }
 
+/// Drop `#` comments, line by line. The YAML and TOML these checks read keep
+/// `#` out of their values, so a comment can never satisfy a rule.
+fn strip_hash_comments(text: &str) -> String {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Runner labels the workflow selects: `os:` matrix lists and literal `runs-on:`.
+fn ci_runners(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in strip_hash_comments(text).lines() {
+        let line = line.trim().trim_start_matches("- ").trim();
+        let value = if let Some(v) = line.strip_prefix("os:") {
+            v
+        } else if let Some(v) = line.strip_prefix("runs-on:") {
+            v
+        } else {
+            continue;
+        };
+        for item in value.trim().trim_matches(['[', ']']).split(',') {
+            let item = item.trim().trim_matches(['"', '\'']);
+            if !item.is_empty() && !item.contains("${{") {
+                out.push(item.to_string());
+            }
+        }
+    }
+    out
+}
+
 fn check_ci(root: &Path) -> Vec<String> {
-    let text = read_text(&root.join(".github/workflows/ci.yml"));
+    let runners = ci_runners(&read_text(&root.join(".github/workflows/ci.yml")));
     let mut errs = Vec::new();
     for os in ["windows-latest", "macos-latest"] {
-        if !text.contains(os) {
+        if !runners.iter().any(|r| r == os) {
             errs.push(format!(
-                "FAIL ci-peers: CI must run a {os} job. Windows and macOS are the Peer OSes; ubuntu-latest may be added as a build/test runner but does not replace them."
+                "FAIL ci-peers: CI must run a {os} job (in the `os:` matrix or a `runs-on:`, not a comment). Windows and macOS are the Peer OSes; ubuntu-latest may be added as a build/test runner but does not replace them."
             ));
         }
     }
@@ -320,8 +351,8 @@ fn check_merge(root: &Path) -> Vec<String> {
 }
 
 fn check_workspace(root: &Path) -> Vec<String> {
-    let workspace = read_text(&root.join("Cargo.toml"));
-    let mdp = read_text(&root.join("crates/mdp/Cargo.toml"));
+    let workspace = strip_hash_comments(&read_text(&root.join("Cargo.toml")));
+    let mdp = strip_hash_comments(&read_text(&root.join("crates/mdp/Cargo.toml")));
     let mut errs = Vec::new();
     if !workspace.contains("members = [\"crates/mdp-core\", \"crates/mdp\"]") {
         errs.push("FAIL one-binary: Cargo.toml members must be exactly [\"crates/mdp-core\", \"crates/mdp\"].".into());
@@ -464,4 +495,45 @@ fn bad_patterns_name_the_fix() {
             errs.join("\n")
         );
     }
+}
+
+#[test]
+fn comment_only_mentions_do_not_satisfy_rules() {
+    let dir = std::env::temp_dir().join(format!("mdp-rules-comment-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join(".github/workflows")).unwrap();
+    fs::create_dir_all(dir.join("crates/mdp")).unwrap();
+    fs::write(
+        dir.join(".github/workflows/ci.yml"),
+        "jobs:\n  check:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        # macos-latest temporarily unavailable\n        os: [windows-latest, ubuntu-latest]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        "[workspace]\n# members = [\"crates/mdp-core\", \"crates/mdp\"]\nmembers = [\"crates/mdp-core\", \"crates/mdp\", \"crates/extra\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("crates/mdp/Cargo.toml"),
+        "[[bin]]\nname = \"mdp\"\n",
+    )
+    .unwrap();
+
+    let ci = check_ci(&dir);
+    let ws = check_workspace(&dir);
+    let _ = fs::remove_dir_all(&dir);
+
+    assert!(
+        ci.iter()
+            .any(|e| e.contains("FAIL ci-peers") && e.contains("macos-latest")),
+        "macos-latest only in a comment must fail ci-peers, got {ci:?}"
+    );
+    assert!(
+        !ci.iter().any(|e| e.contains("windows-latest")),
+        "windows-latest is in the matrix, got {ci:?}"
+    );
+    assert!(
+        ws.iter().any(|e| e.contains("FAIL one-binary")),
+        "members only in a comment must fail one-binary, got {ws:?}"
+    );
 }
