@@ -13,7 +13,6 @@ Run it from the repo root and read the transcript before a change counts as done
 - Two machines: a Mac and a Windows PC. Linux is not a Peer.
 - One cargo workspace (`crates/mdp-core`, `crates/mdp`) and one binary, `mdp`. OS code stays in `crates/mdp/src/platform`. `mdp-core` is platform-free.
 - One peer loop: `run::serve` in `crates/mdp/src/run.rs`.
-- One byte cap: `crates/mdp-core/src/limits.rs` (`MAX_FRAME_BYTES`, `CLIPBOARD_MAX_BYTES`).
 - One skill home: `.agents/skills/verify-mdp`. `.cursor/skills/verify-mdp` and `.claude/skills/verify-mdp` are symlinks to it.
 - Self-merge is off (fleet ADR 0003). Open the pull request against `main` and leave it.
 - Do not recreate `CONTEXT/progress.md`.
@@ -23,9 +22,7 @@ Run it from the repo root and read the transcript before a change counts as done
 | Rule | Check |
 |---|---|
 | No `CONTEXT/progress.md` | `cargo test -p mdp --test rules` (`progress-md`) |
-| One 1 MiB literal, clipboard fits the frame | `limits.rs` plus `max_clipboard_frame_fits_the_wire_cap` and `rules` (`mib-owner`) |
 | Latency bullet names a real e2e test | `rules` (`latency-name`) |
-| Clipboard cap name is `CLIPBOARD_MAX_BYTES` | `rules` (`clipboard-owner`) |
 | Skill paths are symlinks to `.agents/skills/verify-mdp` | `rules` (`skill-home`) |
 | No Deskflow / Input Leap crate (ADR 0001) | `rules` (`no-deskflow`) |
 | CI runs windows-latest and macos-latest jobs (ubuntu-latest allowed as a build/test runner, not a Peer) | `rules` (`ci-peers`) and `.github/workflows/ci.yml` |

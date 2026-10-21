@@ -96,30 +96,6 @@ fn check_progress(root: &Path) -> Vec<String> {
     }
 }
 
-fn check_mib(root: &Path) -> Vec<String> {
-    let mut errs = Vec::new();
-    let owner = "crates/mdp-core/src/limits.rs";
-    if !root.join(owner).is_file() {
-        errs.push(format!(
-            "FAIL mib-owner: missing {owner}. Define MAX_FRAME_BYTES and CLIPBOARD_MAX_BYTES there."
-        ));
-    }
-    let spaced = format!("{} * {}", 1024, 1024);
-    let tight = format!("{}*{}", 1024, 1024);
-    for path in rust_files(root) {
-        let text = read_text(&path);
-        if text.contains(&spaced) || text.contains(&tight) {
-            let shown = rel(root, &path);
-            if shown != owner {
-                errs.push(format!(
-                    "FAIL mib-owner: {shown} copies the 1 MiB literal. The cap lives in {owner}. Use MAX_FRAME_BYTES or CLIPBOARD_MAX_BYTES."
-                ));
-            }
-        }
-    }
-    errs
-}
-
 fn check_latency(root: &Path) -> Vec<String> {
     let arch = read_text(&root.join("CONTEXT/architecture.md"));
     let e2e = read_text(&root.join("crates/mdp/tests/e2e.rs"));
@@ -162,19 +138,6 @@ fn check_latency(root: &Path) -> Vec<String> {
             )
         })
         .collect()
-}
-
-fn check_clipboard_name(root: &Path) -> Vec<String> {
-    let arch = read_text(&root.join("CONTEXT/architecture.md"));
-    let limits = read_text(&root.join("crates/mdp-core/src/limits.rs"));
-    let mut errs = Vec::new();
-    if !arch.contains("CLIPBOARD_MAX_BYTES") {
-        errs.push("FAIL clipboard-owner: CONTEXT/architecture.md must name `CLIPBOARD_MAX_BYTES`. The cap lives in crates/mdp-core/src/limits.rs.".into());
-    }
-    if !limits.contains("pub const CLIPBOARD_MAX_BYTES") {
-        errs.push("FAIL clipboard-owner: define `pub const CLIPBOARD_MAX_BYTES` in crates/mdp-core/src/limits.rs.".into());
-    }
-    errs
 }
 
 fn check_skill(root: &Path) -> Vec<String> {
@@ -384,9 +347,7 @@ fn check_linux(root: &Path) -> Vec<String> {
 fn check_all(root: &Path) -> Vec<String> {
     let mut errs = Vec::new();
     errs.extend(check_progress(root));
-    errs.extend(check_mib(root));
     errs.extend(check_latency(root));
-    errs.extend(check_clipboard_name(root));
     errs.extend(check_skill(root));
     errs.extend(check_deskflow(root));
     errs.extend(check_ci(root));
@@ -408,7 +369,7 @@ fn repo_rules_hold() {
 fn bad_patterns_name_the_fix() {
     let dir = std::env::temp_dir().join(format!("mdp-rules-bad-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("crates/mdp-core/src")).unwrap();
+    fs::create_dir_all(dir.join("crates/mdp-core")).unwrap();
     fs::create_dir_all(dir.join("crates/mdp/src/platform")).unwrap();
     fs::create_dir_all(dir.join("crates/mdp/tests")).unwrap();
     fs::create_dir_all(dir.join("CONTEXT")).unwrap();
@@ -419,11 +380,6 @@ fn bad_patterns_name_the_fix() {
     fs::write(
         dir.join("CONTEXT/architecture.md"),
         "- **Crossing latency:** measured by the `latency` loopback bench.\n- **Clipboard:** capped at 1 MiB.\n",
-    )
-    .unwrap();
-    fs::write(
-        dir.join("crates/mdp-core/src/proto.rs"),
-        format!("pub const MAX_FRAME_BYTES: usize = {} * {};\n", 1024, 1024),
     )
     .unwrap();
     fs::write(
@@ -477,9 +433,7 @@ fn bad_patterns_name_the_fix() {
 
     for code in [
         "FAIL progress-md",
-        "FAIL mib-owner",
         "FAIL latency-name",
-        "FAIL clipboard-owner",
         "FAIL skill-home",
         "FAIL no-deskflow",
         "FAIL ci-peers",

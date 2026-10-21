@@ -75,7 +75,7 @@ follows the cursor. No re-pairing, no dongle swapping, no hotkeys needed.
 - **No plaintext input on the wire:** no input or clipboard frame is sent
   before the Noise handshake completes with a pinned peer.
 - **Crossing latency:** local-LAN cursor motion added latency p95 < 10 ms,
-  measured by the `latency` loopback bench.
+  measured by the `mouse_move_loopback_latency_p95_under_10ms` loopback test.
 - **Hooks capture while suppressed:** physical input is always captured,
   even when swallowed; injected input is never captured nor swallowed
   (`hook_decision` test on Windows, tap logic on macOS).

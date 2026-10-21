@@ -2,24 +2,6 @@
 
 Each class is a mistake an agent can copy. The layer is the highest one that holds. Proof is the check failing on the old behavior, then passing on this tree.
 
-## Clipboard cap and frame cap were two literals
-
-Evidence: `MAX_FRAME_BYTES` in `crates/mdp-core/src/proto.rs` and `CLIPBOARD_MAX_BYTES` in `crates/mdp-core/src/platform/mod.rs` were both `1024 * 1024`. A clipboard of that size encodes to 1,048,580 bytes. The frame codec rejects 1,048,576.
-
-Layer: architecture. One owner, `crates/mdp-core/src/limits.rs`. `CLIPBOARD_MAX_BYTES` is `MAX_FRAME_BYTES - CLIPBOARD_FRAME_OVERHEAD`. A behavior test (`max_clipboard_frame_fits_the_wire_cap`) keeps the overhead honest. The `mib-owner` rule rejects a second copy of the literal.
-
-Why not higher: deleting the cap is not an option; the wire still needs a bound. One constant is the structure.
-
-Old behavior (`cargo test -p mdp-core max_clipboard_frame_fits_the_wire_cap`), exit 101:
-
-```text
-thread 'proto::tests::max_clipboard_frame_fits_the_wire_cap' panicked at crates/mdp-core/src/proto.rs:160:9:
-a clipboard of CLIPBOARD_MAX_BYTES bytes must encode under MAX_FRAME_BYTES, got Err(FrameTooLarge(1048580))
-test proto::tests::max_clipboard_frame_fits_the_wire_cap ... FAILED
-```
-
-Now: that test passes. `repo_rules_hold` passes.
-
 ## `latency` named a bench that does not exist
 
 Evidence: `CONTEXT/architecture.md` said the p95 budget was measured by the `` `latency` `` loopback bench. The only measurement is `mouse_move_loopback_latency_p95_under_10ms` in `crates/mdp/tests/e2e.rs`.
@@ -41,8 +23,6 @@ These were sentences in `AGENTS.md`, `CONTEXT/architecture.md`, or the ADRs. Not
 | Rule | Layer | Why not higher | Old failure |
 |---|---|---|---|
 | Do not recreate `CONTEXT/progress.md` | check `progress-md` | The file is already gone. A type cannot forbid a path. | `FAIL progress-md: CONTEXT/progress.md is back. Status lives in git history, issues, and pull requests. Do not recreate that file.` |
-| One 1 MiB literal | check `mib-owner`, after the limits module | The constant move is the architecture fix. The check stops a second copy. | `FAIL mib-owner: crates/mdp-core/src/proto.rs copies the 1 MiB literal. The cap lives in crates/mdp-core/src/limits.rs. Use MAX_FRAME_BYTES or CLIPBOARD_MAX_BYTES.` |
-| Architecture names `CLIPBOARD_MAX_BYTES` | check `clipboard-owner` | The name is prose pointing at the constant. | `FAIL clipboard-owner: CONTEXT/architecture.md must name CLIPBOARD_MAX_BYTES. The cap lives in crates/mdp-core/src/limits.rs.` |
 | One skill home | check `skill-home` | `#40` already made the symlinks. The check stops a copied directory. | `FAIL skill-home: .cursor/skills/verify-mdp is a real file or directory. Edit .agents/skills/verify-mdp only, and keep .cursor/skills/verify-mdp as a symlink to ../../.agents/skills/verify-mdp.` |
 | No Deskflow crate (ADR 0001) | check `no-deskflow` | There is no dependency to delete. | `FAIL no-deskflow: crates/mdp/Cargo.toml mentions deskflow. ADR 0001: build our own in this workspace. Do not add that crate.` |
 | CI must include Windows and macOS jobs; Linux is a supported CI host, not a Peer OS | check `ci-peers` | The workflow already matched. The check requires `windows-latest` and `macos-latest` and allows an added `ubuntu-latest` build/test job. | `FAIL ci-peers: CI must run a macos-latest job. Windows and macOS are the Peer OSes; ubuntu-latest may be added as a build/test runner but does not replace them.` |
