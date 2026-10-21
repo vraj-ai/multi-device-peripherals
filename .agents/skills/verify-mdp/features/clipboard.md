@@ -1,6 +1,6 @@
 # Clipboard
 
-Clipboard sync copies UTF-8 text from one computer to the other while they are linked. Text that was already copied before the link came up stays put. Turning sync off, or copying more than `CLIPBOARD_MAX_BYTES` (4 bytes under 1 MiB, so the frame fits), sends nothing.
+Clipboard sync copies UTF-8 text from one computer to the other while they are linked. Text that was already copied before the link came up stays put. Turning sync off, or copying more than `CLIPBOARD_MAX_BYTES` (65,515 bytes, about 64 KiB), sends nothing.
 
 ## Sub-features
 
@@ -8,7 +8,9 @@ Clipboard sync copies UTF-8 text from one computer to the other while they are l
 - `no-echo`: the copy does not bounce forever.
 - `already-copied`: text on the clipboard at connect time is not pushed.
 - `toggle-off`: with sync disabled, a new copy stays local.
-- `oversize`: a payload bigger than `CLIPBOARD_MAX_BYTES` is not sent.
+- `oversize`: a payload bigger than the cap is not sent, and the session stays up.
+- `midsize`: a 200,000-byte payload, above the cap but below the 1 MiB codec limit, is not sent, and the session stays up.
+- `at-cap`: a payload of exactly the cap syncs in one Noise message, and the session stays up.
 
 ## How to get to it (user POV)
 
@@ -26,10 +28,12 @@ Preconditions:
 - **Sync once.** Run `.agents/skills/verify-mdp/verify-mdp drive clipboard`. Exit code 0. The log shows `clipboard_text_syncs_without_echo` as `ok`.
 - **Already copied.** The log shows `connecting_does_not_push_what_was_already_copied` as `ok`.
 - **Sync off and too big.** The log shows `clipboard_toggle_off_sends_nothing` and `oversize_clipboard_is_not_sent` as `ok`.
+- **Above the cap, below the codec limit.** The log shows `midsize_clipboard_is_skipped_and_the_session_continues` as `ok`.
+- **At the cap.** The log shows `clipboard_at_cap_syncs_and_the_session_continues` as `ok`.
 
 ## Gotchas
 
 - Images and rich clipboard data are out of scope. Only UTF-8 text moves.
-- The cap is `CLIPBOARD_MAX_BYTES` in `crates/mdp-core/src/limits.rs`, 4 bytes under 1 MiB so the encoded frame fits `MAX_FRAME_BYTES`. A real desktop can hold a larger copy; that copy must not show up on the other side.
+- The cap is on what is sent. One encoded clipboard frame plus its 16-byte Noise tag must fit one 65,535-byte Noise message, so there is no chunking. A real desktop can hold a larger copy; that copy must not show up on the other side.
 - An echo would keep the peers busy. The test waits two poll windows and requires both clipboards to still read the same text.
 - Real OS clipboards on two machines are a two-machine check.

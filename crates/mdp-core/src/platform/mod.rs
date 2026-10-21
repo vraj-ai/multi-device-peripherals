@@ -6,12 +6,27 @@
 
 pub mod fake;
 
+use crate::link::NOISE_TAG_LEN;
 pub use fake::FakePlatform;
 use serde::{Deserialize, Serialize};
 
-/// Maximum clipboard payload in bytes (UTF-8 text only). Owned by
-/// [`crate::limits`] so it stays inside the frame cap.
-pub use crate::limits::CLIPBOARD_MAX_BYTES;
+/// Largest Noise transport message, tag included (`snow`'s private
+/// `MAXMSGLEN`).
+const NOISE_MAX_MESSAGE_BYTES: usize = 65_535;
+
+/// Postcard bytes around the text in a `Frame::Clipboard`: a one-byte variant
+/// index plus a varint string length of at most three bytes.
+const CLIPBOARD_FRAME_OVERHEAD_BYTES: usize = 4;
+
+/// Maximum clipboard payload in bytes (UTF-8 text only), about 64 KiB.
+///
+/// One encoded clipboard frame plus its Noise tag must fit a single Noise
+/// transport message. Larger text is skipped, never chunked.
+pub const CLIPBOARD_MAX_BYTES: usize =
+    NOISE_MAX_MESSAGE_BYTES - NOISE_TAG_LEN - CLIPBOARD_FRAME_OVERHEAD_BYTES;
+
+// A three-byte postcard varint holds lengths below 2^21.
+const _: () = assert!(CLIPBOARD_MAX_BYTES < 1 << 21);
 
 /// Bounding box of one Peer's monitors, in logical points.
 ///

@@ -7,7 +7,7 @@
 //!
 //! Clipboard text sync lives here too, so `mdp run` and the app share it:
 //! the [`Peer`] polls the local clipboard, sends changed UTF-8 text (at
-//! most 1 MiB, never empty) when sharing is on, and on receive sets the
+//! most [`CLIPBOARD_MAX_BYTES`], never empty) when sharing is on, and on receive sets the
 //! local clipboard while remembering the value so it is never echoed back.
 //!
 //! [`mirror_wire`] adopts a received Arrangement with the same semantics as
@@ -39,7 +39,7 @@ const CLIPBOARD_POLL: Duration = Duration::from_millis(500);
 const BRIDGE_POLL: Duration = Duration::from_millis(50);
 
 /// Whether a clipboard read may be sent: sharing is on, the text is
-/// non-empty UTF-8 within the 1 MiB cap, and it differs from what was last
+/// non-empty UTF-8 within [`CLIPBOARD_MAX_BYTES`], and it differs from what was last
 /// sent or received (the echo guard).
 fn clipboard_sendable(share: bool, last: &Option<String>, current: &str) -> bool {
     share
@@ -463,8 +463,8 @@ impl<P: Platform> Peer<P> {
             return Ok(());
         };
         if !clipboard_sendable(self.share_clipboard, &self.last_clipboard, &current) {
-            // Oversize text is still remembered so a stuck clipboard does
-            // not retry every tick; the codec would refuse it anyway.
+            // Oversize text is still remembered so a stuck clipboard is not
+            // re-checked every tick.
             if current.len() > CLIPBOARD_MAX_BYTES {
                 self.last_clipboard = Some(current);
             }
