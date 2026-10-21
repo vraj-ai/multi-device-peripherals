@@ -104,7 +104,7 @@ fn check_latency(root: &Path) -> Vec<String> {
     for line in arch.lines() {
         if line.contains("Crossing latency") {
             capture = true;
-        } else if capture && line.starts_with("- **") {
+        } else if capture && (line.starts_with("- ") || line.starts_with('#')) {
             break;
         }
         if capture {
@@ -131,7 +131,7 @@ fn check_latency(root: &Path) -> Vec<String> {
     }
     names
         .into_iter()
-        .filter(|name| !e2e.contains(&format!("fn {name}")))
+        .filter(|name| !e2e.contains(&format!("fn {name}(")))
         .map(|name| {
             format!(
                 "FAIL latency-name: `{name}` is not a function in crates/mdp/tests/e2e.rs. Cite `mouse_move_loopback_latency_p95_under_10ms`."
@@ -257,7 +257,10 @@ fn check_ci(root: &Path) -> Vec<String> {
 }
 
 fn check_core(root: &Path) -> Vec<String> {
-    let text = read_text(&root.join("crates/mdp-core/Cargo.toml"));
+    let Ok(text) = fs::read_to_string(root.join("crates/mdp-core/Cargo.toml")) else {
+        return vec!["FAIL core-platform-free: crates/mdp-core/Cargo.toml is missing or unreadable. Keep the manifest there and readable; OS code belongs in crates/mdp/src/platform.".into()];
+    };
+    let text = strip_hash_comments(&text);
     let banned = [
         "eframe",
         "tray-icon",
@@ -280,15 +283,25 @@ fn check_core(root: &Path) -> Vec<String> {
 }
 
 fn check_runtime(root: &Path) -> Vec<String> {
-    let needle = format!("{}::{}::{}", "tokio", "runtime", "Builder");
+    let needles = [
+        format!("{}::{}::{}", "tokio", "runtime", "Builder"),
+        format!("{}::{}", "tokio", "main"),
+        format!("{}::new", "Runtime"),
+    ];
     rust_files(root)
         .into_iter()
         .filter(|path| rel(root, path) != "crates/mdp/src/run.rs")
-        .filter(|path| read_text(path).contains(&needle))
+        .filter_map(|path| {
+            let text = read_text(&path);
+            if needles.iter().any(|needle| text.contains(needle)) {
+                Some(rel(root, &path))
+            } else {
+                None
+            }
+        })
         .map(|path| {
             format!(
-                "FAIL one-loop: {} builds a Tokio runtime. Call run::serve in crates/mdp/src/run.rs.",
-                rel(root, &path)
+                "FAIL one-loop: {path} builds a Tokio runtime. Call run::serve in crates/mdp/src/run.rs."
             )
         })
         .collect()
@@ -302,7 +315,7 @@ fn check_merge(root: &Path) -> Vec<String> {
     let mut errs = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        let text = read_text(&path).to_ascii_lowercase();
+        let text = strip_hash_comments(&read_text(&path)).to_ascii_lowercase();
         if text.contains("gh pr merge") || text.contains("automerge") {
             errs.push(format!(
                 "FAIL self-merge: {} merges pull requests. Self-merge is off (fleet ADR 0003). Open the PR and leave it.",
@@ -410,8 +423,8 @@ fn bad_patterns_name_the_fix() {
     fs::write(
         dir.join("crates/mdp/src/other_loop.rs"),
         format!(
-            "fn start() {{ let _ = {}::{}::{}::new_current_thread(); }}\n",
-            "tokio", "runtime", "Builder"
+            "fn start() {{ let _ = {}::{}::{}::new_current_thread(); }}\nfn seed() {{ let _ = {}::new(); }}\n",
+            "tokio", "runtime", "Builder", "Runtime"
         ),
     )
     .unwrap();
@@ -449,6 +462,55 @@ fn bad_patterns_name_the_fix() {
             errs.join("\n")
         );
     }
+}
+
+#[test]
+fn fail_closed_and_exact_latency_names_name_the_fix() {
+    let dir = std::env::temp_dir().join(format!("mdp-rules-fix-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+
+    let missing = check_core(&dir);
+    assert!(
+        missing
+            .iter()
+            .any(|err| err.contains("FAIL core-platform-free")
+                && err.contains("crates/mdp-core/Cargo.toml is missing")),
+        "a missing core manifest must fail closed, got {missing:?}"
+    );
+
+    fs::create_dir_all(dir.join("crates/mdp-core")).unwrap();
+    fs::write(
+        dir.join("crates/mdp-core/Cargo.toml"),
+        "# windows = \"0.61\"\n[bench]\nname = \"core\"\n",
+    )
+    .unwrap();
+    let comment_only = check_core(&dir);
+    assert!(
+        comment_only.is_empty(),
+        "a comment-only mention of windows must pass check_core, got {comment_only:?}"
+    );
+
+    fs::create_dir_all(dir.join("CONTEXT")).unwrap();
+    fs::create_dir_all(dir.join("crates/mdp/tests")).unwrap();
+    fs::write(
+        dir.join("crates/mdp/tests/e2e.rs"),
+        "fn mouse_move_loopback_latency_p95_under_10ms() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("CONTEXT/architecture.md"),
+        "- **Crossing latency:** see `mouse_move_loopback` in `crates/mdp/tests/e2e.rs`.\n- **Clipboard:** capped at 1 MiB.\n",
+    )
+    .unwrap();
+    let prefix = check_latency(&dir);
+    assert!(
+        prefix
+            .iter()
+            .any(|err| err.contains("FAIL latency-name") && err.contains("mouse_move_loopback")),
+        "a prefix-only latency name must fail, got {prefix:?}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]

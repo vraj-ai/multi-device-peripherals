@@ -2,11 +2,26 @@
 
 `mdp` shares one mouse and one keyboard between a Mac and a Windows PC.
 
+## Route
+
+Apply these yourself. The captain does not name a skill.
+
+- Hard work, a change that crosses modules, or a bug whose cause is unknown: follow poteto-mode and let it pick the playbook.
+- Every change: run verify-mdp (`.agents/skills/verify-mdp/SKILL.md`) and read its transcript before the change counts as done.
+- Review: follow interrogate. Leave the verdict unapplied.
+- A risky refactor: follow blast-radius and prove the risk by running code before editing further.
+- `ship` to ship one ticket at a time, `grill` when the goal is unclear, `issues` for tracker work, `snapshot` for unfinished work. Tracker notes live in `docs/agents/issue-tracker.md`.
+- End with a closeout snapshot: branch, HEAD sha, what landed, and the next action.
+
+## Authority
+
+Self-merge is off (fleet ADR 0003). Open the pull request against `main` and leave it for the captain to merge.
+
 ## Verify command
 
 `.agents/skills/verify-mdp/verify-mdp`
 
-Run it from the repo root and read the transcript before a change counts as done. It runs the rules test, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the e2e peers, the fake platform, `cargo build -p mdp`, the CLI in a scratch home, and `mdp selftest`. A new clippy warning fails the run. A `GAP` (selftest off Windows and macOS, the ignored loopback bench, two real machines) does not.
+Run it from the repo root and read the transcript before a change counts as done. It runs doctor, the rules test, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the e2e peers, the fake platform, `cargo build -p mdp`, the CLI in a scratch home, and `mdp selftest`. A new clippy warning fails the run. A `GAP` (selftest off Windows and macOS, the ignored loopback bench, two real machines) does not.
 
 ## Boundaries
 
