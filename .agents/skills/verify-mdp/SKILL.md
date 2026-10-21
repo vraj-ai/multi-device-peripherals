@@ -67,7 +67,7 @@ Stable handles are the subcommands `run`, `ui`, `pair`, `selftest`, the help tex
 
 - Crossing: `cursor_crosses_right_and_back_with_remote_only_injection`, `kill_link_while_remote_restores_focus_within_1s`, `physical_input_on_sink_claims_source`, `stuck_keys_released_on_crossing`, `escape_chord_restores_local_focus`, `disconnect_while_remote_warps_back_and_unsuppresses`
 - Pairing: `pairing_code_is_six_digits_and_stable`, `loopback_pairing_exchanges_frames_both_ways`, `rejecting_pairing_code_closes_without_frames`, `pinned_link_refuses_impostor_and_hides_plaintext`, `shows_code_in_two_groups_and_confirms`, `mismatch_rejects`, `expiry_rejects`
-- Clipboard: `clipboard_text_syncs_without_echo`, `connecting_does_not_push_what_was_already_copied`, `clipboard_toggle_off_sends_nothing`, `oversize_clipboard_is_not_sent`
+- Clipboard: `clipboard_text_syncs_without_echo`, `connecting_does_not_push_what_was_already_copied`, `clipboard_toggle_off_sends_nothing`, `oversize_clipboard_is_not_sent`, `midsize_clipboard_is_skipped_and_the_session_continues`, `clipboard_at_cap_syncs_and_the_session_continues`
 - Arrangement: `arrangement_top_crosses_with_mirrored_wire_frames`, `saved_arrangement_ends_both_sessions_with_the_senders_view`, `drag_right_then_save_emits_right`, `arrow_keys_revert_and_receive`, `mirror_flips_side_and_offset`
 - Fake platform: `fake_platform_feeds_physical_and_records_injected`, `fake_platform_rejects_oversize_clipboard`
 
