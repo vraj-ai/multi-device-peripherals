@@ -3,9 +3,9 @@ name: ci
 on:
   push:
     branches: [main]
-    paths: ['**', '!**/*.md', '!docs/**', 'CONTEXT/ui-design.md']
+    paths: ['**', '!**/*.md', '!docs/**', 'CONTEXT/ui-design.md', 'CONTEXT/architecture.md', 'CONTEXT/progress.md']
   pull_request:
-    paths: ['**', '!**/*.md', '!docs/**', 'CONTEXT/ui-design.md']
+    paths: ['**', '!**/*.md', '!docs/**', 'CONTEXT/ui-design.md', 'CONTEXT/architecture.md', 'CONTEXT/progress.md']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
