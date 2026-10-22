@@ -17,6 +17,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: rules
+        run: cargo test -p mdp --test rules -- --nocapture
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy
