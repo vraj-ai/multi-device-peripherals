@@ -25,6 +25,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: rules
+        run: cargo test -p mdp --test rules -- --nocapture
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy

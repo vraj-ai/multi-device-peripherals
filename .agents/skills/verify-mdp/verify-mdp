@@ -13,7 +13,7 @@ usage() {
 verify-mdp — prove mdp from cargo tests, e2e.rs, the fake platform, and mdp selftest
 
 Usage:
-  verify-mdp                  Full proof (doctor, fmt, clippy, tests, e2e, fake platform, build, cli, selftest)
+  verify-mdp                  Full proof (doctor, rules, fmt, clippy, tests, e2e, fake platform, build, cli, selftest)
   verify-mdp doctor           Read-only check: toolchain, workspace, port 24800, binary version if built
   verify-mdp drive FEATURE    One feature: crossing, pairing, clipboard, arrangement, selftest
   verify-mdp cleanup [DIR]    Kill pids this run recorded and delete its scratch home. Logs stay.
@@ -191,6 +191,21 @@ step_doctor() {
     note_result doctor PASS
   else
     note_result doctor FAIL
+  fi
+}
+
+step_rules() {
+  if run_logged rules cargo test -p mdp --test rules -- --nocapture; then
+    local logf="$RUN_DIR/rules.log"
+    if grep -F 'repo_rules_hold' "$logf" | grep -Eq '\.\.\. ok[[:space:]]*$' \
+      && grep -F 'bad_patterns_name_the_fix' "$logf" | grep -Eq '\.\.\. ok[[:space:]]*$'; then
+      note_result rules PASS
+    else
+      echo "rules log is missing a passing repo_rules_hold or bad_patterns_name_the_fix" | tee -a "$TRANSCRIPT"
+      note_result rules FAIL
+    fi
+  else
+    note_result rules FAIL
   fi
 }
 
@@ -444,6 +459,8 @@ drive_clipboard() {
   require_ok clipboard-existing cargo test -p mdp --test e2e connecting_does_not_push_what_was_already_copied -- --nocapture || failed=1
   require_ok clipboard-off cargo test -p mdp --test e2e clipboard_toggle_off_sends_nothing -- --nocapture || failed=1
   require_ok clipboard-oversize cargo test -p mdp --test e2e oversize_clipboard_is_not_sent -- --nocapture || failed=1
+  require_ok clipboard-midsize cargo test -p mdp --test e2e midsize_clipboard_is_skipped_and_the_session_continues -- --nocapture || failed=1
+  require_ok clipboard-at-cap cargo test -p mdp --test e2e clipboard_at_cap_syncs_and_the_session_continues -- --nocapture || failed=1
   if [[ "$failed" -eq 0 ]]; then
     note_result clipboard PASS
   else
@@ -595,6 +612,7 @@ cmd_drive() {
 cmd_all() {
   begin_run
   step_doctor
+  step_rules
   step_fmt
   step_clippy
   step_test
